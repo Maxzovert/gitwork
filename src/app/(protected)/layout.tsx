@@ -7,7 +7,7 @@ type Props = {
 const SidebarLayout = () => {
   return (
     <div>
-      
+      <h1>Hellow Eolao</h1>
     </div>
   )
 }
