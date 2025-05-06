@@ -1,14 +1,28 @@
+import { SidebarProvider } from '@/components/ui/sidebar'
+import { UserButton } from '@clerk/nextjs'
 import React from 'react'
 
 type Props = {
     children: React.ReactNode
 }
 
-const SidebarLayout = () => {
+const SidebarLayout = ({children} : Props) => {
   return (
-    <div>
-      <h1>Hellow Eolao</h1>
-    </div>
+    <SidebarProvider>
+      {/* Appsidebar */}
+      <main className='w-full m-2'>
+        <div className='flex items-center gap-2 border-sidebar-border border shadow- rounded-md p-2 px-4'>
+          {/* searchbar */}
+          <div className="ml-auto"></div>
+          <UserButton/>
+        </div>
+        <div className="h-4"></div>     
+        {/* main contet    */}
+        <div className="border-sidebar-border bg-sidebar border shadow rounded-md overflow-y-scroll h-[calc(100vh-6rem)] p-4">
+          {children}
+        </div>
+      </main>
+    </SidebarProvider>
   )
 }
 
