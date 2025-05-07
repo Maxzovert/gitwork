@@ -61,13 +61,12 @@ function Appsidebar() {
   return (
     <Sidebar collapsible="icon" variant="floating">
       <SidebarHeader>
-        {/* <div className="flex items-center gap-2 ">
+        <div className="flex items-center gap-2 ml-2">
             <Image src='/logo.png' alt="logo" width={40} height={40}/>
             {open && (
                 <h1 className="text-xl font-bold text-primary/80">Gitwork</h1>
             )}
-        </div> */}
-        Logo
+        </div>
       </SidebarHeader>
       <SidebarContent>
         {/* Application group */}
@@ -122,14 +121,25 @@ function Appsidebar() {
               })}
 
               <div className="h-2"></div>
+              {open ? (
               <SidebarMenuItem>
                 <Link href='/create'>
-              <Button size='sm' variant={'outline'} className="w-fit ">
+              <Button size='sm' variant={'outline'} className="w-fit cursor-pointer">
                 <Plus/>
                 Create Project
               </Button>
                 </Link>
+              </SidebarMenuItem> 
+              ) : (
+                <SidebarMenuItem>
+                <Link href='/create'>
+              <Button size='sm' variant={'outline'} className="w-fit cursor-pointer">
+                <Plus/>
+              </Button>
+                </Link>
               </SidebarMenuItem>
+              )
+              }
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
