@@ -17,7 +17,6 @@ const CreatePage = () => {
     const createProject = api.project.createProject.useMutation()
 
     function onSubmit(data : FormInput){
-        window.alert(JSON.stringify(data, null , 2))
         createProject.mutate({
             githubUrl: data.repoUrl,
             name : data.projectName,
@@ -60,7 +59,7 @@ const CreatePage = () => {
                         placeholder='Github Token (Optional)'
                         />
                         <div className="h-4"></div>
-                            <Button type='submit'>Create Project</Button>
+                            <Button type='submit' disabled={createProject.isPending}>Create Project</Button>
                     </form>
                 </div>
         </div>
