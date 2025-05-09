@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import useProjects from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
 import { Bot, CreditCard, LayoutDashboard, Plus, Presentation } from "lucide-react";
 import Image from "next/image";
@@ -22,6 +23,7 @@ import React from "react";
 function Appsidebar() {
   const pathname = usePathname();
   const {open} = useSidebar();
+  const {projects , projectId , setProjectId} = useProjects();
   const items = [
     {
       title: "Dashboard",
@@ -42,20 +44,6 @@ function Appsidebar() {
       title: "Billing",
       url: "/billing",
       icon: CreditCard,
-    },
-  ];
-  const projects = [
-    {
-      name: "Project 1",
-    },
-    {
-      name: "Project 2",
-    },
-    {
-      name: "Project 3",
-    },
-    {
-      name: "Project 4",
     },
   ];
   return (
@@ -100,20 +88,20 @@ function Appsidebar() {
           <SidebarGroupLabel>Your Projects</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {projects.map((project) => {
+              {projects?.map((project) => {
                 return (
                   <SidebarMenuItem key={project.name}>
                     <SidebarMenuButton asChild>
-                      <div>
+                      <div onClick={() => setProjectId(project.id)}>
                         <div
                           className={cn(
-                            "text-primaryS flex size-6 items-center justify-center rounded-sm border bg-white text-sm",
-                            { "bg-primary text-white": true },
+                            "text-primaryS flex size-6 items-center justify-center rounded-sm border bg-white text-sm cursor-pointer",
+                            { "bg-primary text-white": project.id === projectId },
                           )}
                         >
                           {project.name[0]}
                         </div>
-                        <span>{project.name}</span>
+                        <span className="cursor-pointer">{project.name}</span>
                       </div>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
