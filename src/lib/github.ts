@@ -7,7 +7,7 @@ export const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-const githubUrl = "https://github.com/Maxzovert/thryve";
+// const githubUrl = "https://github.com/Maxzovert/thryve";
 
 type Response = {
   commitHash: string;
@@ -53,6 +53,9 @@ export const pullCommits = async (projectId: string) => {
     projectId,
     commitHashes,
   );
+  if (unprocessedCommits.length === 0) {
+      return { count: 0, message: "No new commits to process" };
+    }
   const summaryResponses = await Promise.allSettled(unprocessedCommits.map(commit => {
     return summariesCommits(githubUrl , commit.commitHash)
   }))
@@ -61,11 +64,13 @@ export const pullCommits = async (projectId: string) => {
     if(response.status === 'fulfilled'){
       return response.value as string
     }
-    return ""
+    return "No summary found"
   })
+  console.log(summarise , "Summaries")
 
   const commits = await db.commit.createMany({
     data : summarise.map((summary , index)=> {
+      console.log(`Processing commits ${index}`)
       return {
         projectId : projectId,
         commitHash : unprocessedCommits[index]!.commitHash,
@@ -80,14 +85,17 @@ export const pullCommits = async (projectId: string) => {
   return commits;
 };
 
-async function summariesCommits(githubUrl: string, commitHash: string) {
-  const {data} = await axios.get(`${githubUrl}/commit/${commitHash}.diff`,{
-    headers : {
-      Accept: 'application/vnd.github.v3.diff'
-    }
-  })
-  return await aiSummariesCommits(data) || "No summary found";
-} 
+export async function summariesCommits(githubUrl: string, commitHash: string) {
+  const { data } = await axios.get(`${githubUrl}/commit/${commitHash}.diff`, {
+    headers: {
+      Accept: "application/vnd.github.v3.diff",
+    },
+  });
+
+  const summary = await aiSummariesCommits(data);
+  return summary || "No summary found";
+}
+
 
 const fetchProjectGithubUrl = async (projectId: string) => {
   const project = await db.project.findUnique({
@@ -124,4 +132,4 @@ const filterUnprocessedCommits = async (
   return unprocessedCommits;
 };
 
-await pullCommits("cmagvmkr9000399h0zcn6phog");
+// await pullCommits("cmagvmkr9000399h0zcn6phog").then(console.log)
