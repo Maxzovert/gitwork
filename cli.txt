@@ -1,0 +1,2 @@
+npx tsx src/lib/github.ts 
+npx tsx src/lib/gemini.ts 

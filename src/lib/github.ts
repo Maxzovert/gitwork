@@ -7,9 +7,9 @@ export const octokit = new Octokit({
     auth : process.env.GITHUB_TOKEN
 })
 
-const githubUrl = "https://github.com/Maxzovert/thryve.git"
+const githubUrl = "https://github.com/Maxzovert/thryve"
 
-type Response ={
+type Response =  {
     commitHash:string
     commitMessage:string
     commitAuthorName:string
@@ -18,9 +18,15 @@ type Response ={
 }
 
 export const getCommitHashes = async (githubUrl: string): Promise<Response[]> => {
+    let [owner, repo] = githubUrl.split('/').slice(-2);
+    repo = repo?.replace(/\.git$/, '');
+
+    if (!owner || !repo) {
+      throw new Error("Invalid github url")
+    }
     const {data} = await octokit.rest.repos.listCommits({
-        owner:"Maxzovert",
-        repo:"thryve",
+        owner,
+        repo
     })
 
     const sortedCommits = data.sort((a: any , b:any ) => new Date(b.commit.author.date).getTime() - new Date(a.commit.author.date).getTime()) as any[]
@@ -41,6 +47,10 @@ export const pullCommits = async (projectId : string) => {
     const unprocessedCommits = await filterUnprocessedCommits( projectId , commitHashes)
     console.log(unprocessedCommits)
     return unprocessedCommits
+}
+
+async function summariesCommits(githubUrl : string , commitHash : string) {
+
 }
 
 const fetchProjectGithubUrl = async (projectId: string) => {
@@ -71,4 +81,4 @@ const fetchProjectGithubUrl = async (projectId: string) => {
         return unprocessedCommits
     }
 
-await pullCommits("cmagvhj9m000099h0qs3539uy")
+await pullCommits("cmagvmkr9000399h0zcn6phog")
