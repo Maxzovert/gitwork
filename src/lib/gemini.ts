@@ -8,7 +8,7 @@ const model = genAI.getGenerativeModel({
   model: "gemini-1.5-flash",
 });
 
-export const summariesCommits = async (diff: string) => {
+export const aiSummariesCommits = async (diff: string) => {
   const response = await model.generateContent([
     `You are an expert programmer, and you are trying to summarize a git diff.
 Reminders about the git diff format:
@@ -188,7 +188,7 @@ index bd535c8..fc0c772 100644
 +});
   `;
 
-  const summary = await summariesCommits(diffText);
+  const summary = await aiSummariesCommits(diffText);
   console.log(summary);
 };
 run();
