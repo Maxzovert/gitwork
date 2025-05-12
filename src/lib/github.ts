@@ -22,7 +22,6 @@ export const getCommitHashes = async (
 ): Promise<Response[]> => {
   let [owner, repo] = githubUrl.split("/").slice(-2);
   repo = repo?.replace(/\.git$/, "");
-
   if (!owner || !repo) {
     throw new Error("Invalid github url");
   }
@@ -30,13 +29,11 @@ export const getCommitHashes = async (
     owner,
     repo,
   });
-
   const sortedCommits = data.sort(
     (a: any, b: any) =>
       new Date(b.commit.author.date).getTime() -
       new Date(a.commit.author.date).getTime(),
   ) as any[];
-
   return sortedCommits.slice(0, 15).map((commit: any) => ({
     commitHash: commit.sha as string,
     commitMessage: commit.commit.message ?? "",
@@ -91,11 +88,9 @@ export async function summariesCommits(githubUrl: string, commitHash: string) {
       Accept: "application/vnd.github.v3.diff",
     },
   });
-
   const summary = await aiSummariesCommits(data);
   return summary || "No summary found";
 }
-
 
 const fetchProjectGithubUrl = async (projectId: string) => {
   const project = await db.project.findUnique({
