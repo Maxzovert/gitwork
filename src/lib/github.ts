@@ -83,13 +83,45 @@ export const pullCommits = async (projectId: string) => {
 };
 
 export async function summariesCommits(githubUrl: string, commitHash: string) {
-  const { data } = await axios.get(`${githubUrl}/commit/${commitHash}.diff`, {
-    headers: {
-      Accept: "application/vnd.github.v3.diff",
-    },
-  });
-  const summary = await aiSummariesCommits(data);
-  return summary || "No summary found";
+  try {
+    // Extract owner and repo from GitHub URL
+    let [owner, repo] = githubUrl.split("/").slice(-2);
+    repo = repo?.replace(/\.git$/, "");
+    
+    if (!owner || !repo) {
+      throw new Error("Invalid github url");
+    }
+
+    // Use the GitHub API to get the commit diff
+    const { data } = await octokit.rest.repos.getCommit({
+      owner,
+      repo,
+      ref: commitHash,
+    });
+
+    // Get the diff from the commit data
+    const diff = data.files?.map(file => 
+      `diff --git a/${file.filename} b/${file.filename}\n${file.patch || ''}`
+    ).join('\n') || '';
+
+    if (!diff) {
+      console.error(`No diff found for commit ${commitHash}`);
+      return "No changes found in this commit";
+    }
+
+    const summary = await aiSummariesCommits(diff);
+    
+    if (!summary || typeof summary !== 'string' || summary.trim() === '') {
+      console.error(`Invalid summary returned for commit ${commitHash}`);
+      return "No meaningful changes detected";
+    }
+
+    console.log(`Generated summary for ${commitHash}:`, summary);
+    return summary;
+  } catch (error) {
+    console.error(`Error processing commit ${commitHash}:`, error);
+    return "Error processing commit changes";
+  }
 }
 
 const fetchProjectGithubUrl = async (projectId: string) => {
