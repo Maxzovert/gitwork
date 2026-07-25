@@ -30,8 +30,8 @@ const CreatePage = () => {
           toast.success("Project Created Successfully");
           refetch();
         },
-        onError: () => {
-          toast.error("Project Creation Failed");
+        onError: (error) => {
+          toast.error(error.message || "Project Creation Failed");
         },
       },
     );

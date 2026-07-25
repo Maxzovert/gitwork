@@ -1,4 +1,5 @@
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { ensureDbUser } from '@/lib/ensure-user'
 import { UserButton } from '@clerk/nextjs'
 import React from 'react'
 import Appsidebar from './app-sidebar'
@@ -7,7 +8,9 @@ type Props = {
     children: React.ReactNode
 }
 
-const SidebarLayout = ({children} : Props) => {
+const SidebarLayout = async ({children} : Props) => {
+  await ensureDbUser();
+
   return (
     <SidebarProvider>
         <Appsidebar/>

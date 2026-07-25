@@ -1,13 +1,10 @@
 import { db } from "@/server/db";
 import { Octokit } from "octokit";
-import axios from "axios";
 import { aiSummariesCommits } from "./gemini";
 
 export const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
-
-// const githubUrl = "https://github.com/Maxzovert/thryve";
 
 type Response = {
   commitHash: string;
@@ -21,7 +18,7 @@ export const getCommitHashes = async (
   githubUrl: string,
 ): Promise<Response[]> => {
   let [owner, repo] = githubUrl.split("/").slice(-2);
-  repo = repo?.replace(/\.git$/, "");
+  repo = repo?.replace(/\.git$/, "").replace(/\/$/, "");
   if (!owner || !repo) {
     throw new Error("Invalid github url");
   }
@@ -44,65 +41,88 @@ export const getCommitHashes = async (
 };
 
 export const pullCommits = async (projectId: string) => {
-  const { project, githubUrl } = await fetchProjectGithubUrl(projectId);
+  const { githubUrl } = await fetchProjectGithubUrl(projectId);
   const commitHashes = await getCommitHashes(githubUrl);
   const unprocessedCommits = await filterUnprocessedCommits(
     projectId,
     commitHashes,
   );
   if (unprocessedCommits.length === 0) {
-      return { count: 0, message: "No new commits to process" };
-    }
-  const summaryResponses = await Promise.allSettled(unprocessedCommits.map(commit => {
-    return summariesCommits(githubUrl , commit.commitHash)
-  }))
+    return { count: 0, message: "No new commits to process" };
+  }
 
-  const summarise = summaryResponses.map((response) => {
-    if(response.status === 'fulfilled'){
-      return response.value as string
-    }
-    return "No summary found"
-  })
-  console.log(summarise , "Summaries")
-
+  // Save commits immediately so the UI can render without waiting on Gemini
   const commits = await db.commit.createMany({
-    data : summarise.map((summary , index)=> {
-      console.log(`Processing commits ${index}`)
-      return {
-        projectId : projectId,
-        commitHash : unprocessedCommits[index]!.commitHash,
-        commitMessage : unprocessedCommits[index]!.commitMessage,
-        commitAuthorName : unprocessedCommits[index]!.commitAuthorName,
-        commitAuthorAvatar : unprocessedCommits[index]!.commitAuthorAvatar,
-        commitDate : unprocessedCommits[index]!.commitDate,
-        summary
-      }
-    })
-  })
+    data: unprocessedCommits.map((commit) => ({
+      projectId,
+      commitHash: commit.commitHash,
+      commitMessage: commit.commitMessage,
+      commitAuthorName: commit.commitAuthorName,
+      commitAuthorAvatar: commit.commitAuthorAvatar,
+      commitDate: commit.commitDate,
+      summary: commit.commitMessage.split("\n")[0] ?? commit.commitMessage,
+    })),
+  });
+
+  // Best-effort AI summaries in the background (won't block rendering)
+  void enhanceCommitSummaries(projectId, githubUrl, unprocessedCommits).catch(
+    (error) => console.error("Failed to enhance commit summaries:", error),
+  );
+
   return commits;
 };
 
+async function enhanceCommitSummaries(
+  projectId: string,
+  githubUrl: string,
+  commits: Response[],
+) {
+  for (const commit of commits) {
+    try {
+      const summary = await summariesCommits(githubUrl, commit.commitHash);
+      if (
+        !summary ||
+        summary.includes("quota exceeded") ||
+        summary === "Error processing commit changes"
+      ) {
+        continue;
+      }
+
+      await db.commit.updateMany({
+        where: {
+          projectId,
+          commitHash: commit.commitHash,
+        },
+        data: { summary },
+      });
+    } catch (error) {
+      console.error(`Skipping AI summary for ${commit.commitHash}:`, error);
+    }
+  }
+}
+
 export async function summariesCommits(githubUrl: string, commitHash: string) {
   try {
-    // Extract owner and repo from GitHub URL
     let [owner, repo] = githubUrl.split("/").slice(-2);
-    repo = repo?.replace(/\.git$/, "");
-    
+    repo = repo?.replace(/\.git$/, "").replace(/\/$/, "");
+
     if (!owner || !repo) {
       throw new Error("Invalid github url");
     }
 
-    // Use the GitHub API to get the commit diff
     const { data } = await octokit.rest.repos.getCommit({
       owner,
       repo,
       ref: commitHash,
     });
 
-    // Get the diff from the commit data
-    const diff = data.files?.map(file => 
-      `diff --git a/${file.filename} b/${file.filename}\n${file.patch || ''}`
-    ).join('\n') || '';
+    const diff =
+      data.files
+        ?.map(
+          (file) =>
+            `diff --git a/${file.filename} b/${file.filename}\n${file.patch || ""}`,
+        )
+        .join("\n") || "";
 
     if (!diff) {
       console.error(`No diff found for commit ${commitHash}`);
@@ -110,8 +130,8 @@ export async function summariesCommits(githubUrl: string, commitHash: string) {
     }
 
     const summary = await aiSummariesCommits(diff);
-    
-    if (!summary || typeof summary !== 'string' || summary.trim() === '') {
+
+    if (!summary || typeof summary !== "string" || summary.trim() === "") {
       console.error(`Invalid summary returned for commit ${commitHash}`);
       return "No meaningful changes detected";
     }
@@ -149,14 +169,10 @@ const filterUnprocessedCommits = async (
       projectId,
     },
   });
-  const unprocessedCommits = commitHashes.filter(
+  return commitHashes.filter(
     (commit) =>
       !processedCommits.some(
         (processedCommit) => processedCommit.commitHash === commit.commitHash,
       ),
   );
-
-  return unprocessedCommits;
 };
-
-// await pullCommits("cmagvmkr9000399h0zcn6phog").then(console.log)

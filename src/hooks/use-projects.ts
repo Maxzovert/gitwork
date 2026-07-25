@@ -4,7 +4,7 @@ import { useLocalStorage } from "usehooks-ts";
 
 const useProjects = () => {
   const { data: projects } = api.project.getProjects.useQuery();
-  const [projectId, setProjectId] = useLocalStorage("gitwork-project-id", " ");
+  const [projectId, setProjectId] = useLocalStorage("gitwork-project-id", "");
   const project = projects?.find((project) => project.id === projectId);
   return {
     projects,

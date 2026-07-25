@@ -41,6 +41,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.5.0",
     "ignore": "^5.3.2",
+    "langchain": "^0.3.37",
     "lucide-react": "^0.507.0",
     "minidenticons": "^4.2.1",
     "next": "^15.2.3",

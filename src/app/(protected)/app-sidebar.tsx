@@ -90,7 +90,7 @@ function Appsidebar() {
             <SidebarMenu>
               {projects?.map((project) => {
                 return (
-                  <SidebarMenuItem key={project.name}>
+                  <SidebarMenuItem key={project.id}>
                     <SidebarMenuButton asChild>
                       <div onClick={() => setProjectId(project.id)}>
                         <div

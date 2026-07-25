@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { pullCommits } from "@/lib/github";
+import { indexGithubRepo } from "@/lib/github-loader";
 
 export const projectRouter = createTRPCRouter({
   createProject: protectedProcedure
@@ -23,7 +24,15 @@ export const projectRouter = createTRPCRouter({
           },
         },
       });
-      await pullCommits(project.id);
+
+      // Run AI work in the background so create succeeds even if Gemini quota is hit
+      void indexGithubRepo(project.id, input.githubUrl, input.githubToken).catch(
+        (error) => console.error("Background repo indexing failed:", error),
+      );
+      void pullCommits(project.id).catch((error) =>
+        console.error("Background commit pull failed:", error),
+      );
+
       return project;
     }),
 
@@ -43,14 +52,17 @@ export const projectRouter = createTRPCRouter({
   getCommits: protectedProcedure
     .input(
       z.object({
-        projectId: z.string(),
+        projectId: z.string().min(1),
       }),
     )
     .query(async ({ ctx, input }) => {
-      pullCommits(input.projectId).then().catch(console.error);
+      await pullCommits(input.projectId).catch(console.error);
       return await ctx.db.commit.findMany({
         where: {
           projectId: input.projectId,
+        },
+        orderBy: {
+          commitDate: "desc",
         },
       });
     }),
