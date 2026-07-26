@@ -4,9 +4,9 @@ import { Document } from "@langchain/core/documents";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// Free-tier friendly model (gemini-3.x flash is often 5 RPM / paid-only)
+// Free-tier friendly model (gemini-2.5-flash-lite is closed to new users)
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash-lite",
+  model: "gemini-3.1-flash-lite",
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,13 +22,21 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
       const isDailyQuota =
         message.includes("PerDay") ||
         message.includes("GenerateRequestsPerDay");
+      const isModelGone =
+        message.includes("404") ||
+        message.toLowerCase().includes("no longer available");
       const isRateLimit =
         message.includes("429") ||
         message.toLowerCase().includes("quota") ||
         message.toLowerCase().includes("rate");
 
-      // Daily quota won't recover with retries — fail fast
-      if (isDailyQuota || !isRateLimit || attempt === retries - 1) {
+      // Daily quota / retired models won't recover with retries — fail fast
+      if (
+        isDailyQuota ||
+        isModelGone ||
+        !isRateLimit ||
+        attempt === retries - 1
+      ) {
         throw error;
       }
 
@@ -124,10 +132,21 @@ export async function summariseCode(doc: Document) {
   }
 }
 
+const EMBEDDING_DIMS = 768;
+
+/** Truncate + L2-normalize — required when using gemini-embedding-001 below 3072 dims. */
+function truncateAndNormalize(values: number[], dims = EMBEDDING_DIMS) {
+  const truncated = values.slice(0, dims);
+  const norm = Math.sqrt(truncated.reduce((sum, v) => sum + v * v, 0));
+  if (!norm) return truncated;
+  return truncated.map((v) => v / norm);
+}
+
 export async function generateEmbeddings(summary: string) {
   const embeddingModel = genAI.getGenerativeModel({
     model: "gemini-embedding-001",
   });
   const result = await withRetry(() => embeddingModel.embedContent(summary));
-  return result.embedding.values;
+  // Default output is 3072; schema column is vector(768)
+  return truncateAndNormalize(result.embedding.values);
 }

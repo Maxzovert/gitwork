@@ -36,6 +36,39 @@ export const projectRouter = createTRPCRouter({
       return project;
     }),
 
+  /** Wipe + re-index source embeddings for an existing project. */
+  reindexProject: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        githubToken: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: {
+          id: input.projectId,
+          deletedAt: null,
+          userToProjects: {
+            some: { userId: ctx.user.userId! },
+          },
+        },
+      });
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      void indexGithubRepo(
+        project.id,
+        project.githubUrl,
+        input.githubToken,
+      ).catch((error) =>
+        console.error("Background repo re-indexing failed:", error),
+      );
+
+      return { ok: true as const };
+    }),
+
   getProjects: protectedProcedure.query(async ({ ctx }) => {
     return await ctx.db.project.findMany({
       where: {
