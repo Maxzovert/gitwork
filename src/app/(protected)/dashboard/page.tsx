@@ -1,17 +1,18 @@
 "use client";
+
 import useProjects from "@/hooks/use-projects";
 import { ExternalLink, Github, Trash2 } from "lucide-react";
-import Link from "next/link";
 import React from "react";
 import CommitLog from "./commit-log";
 import AskQuestionCard from "./ask-question";
 import MeetingCard from "./meeting-card";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/trpc/react";
 import { toast } from "sonner";
 
-const dashboard = () => {
-  const { project, projects, projectId, setProjectId } = useProjects();
+const Dashboard = () => {
+  const { project, projects, setProjectId } = useProjects();
   const utils = api.useUtils();
   const deleteProject = api.project.deleteProject.useMutation();
 
@@ -30,10 +31,13 @@ const dashboard = () => {
       {
         onSuccess: () => {
           toast.success("Project deleted successfully");
-          const remaining = projects?.filter((p) => p.id !== project.id) ?? [];
+          const remaining =
+            projects?.filter((p) => p.id !== project.id) ?? [];
+          utils.project.getProjects.setData(undefined, remaining);
           setProjectId(remaining[0]?.id ?? "");
           void utils.project.getProjects.invalidate();
           void utils.project.getMeetings.invalidate();
+          void utils.project.getCommits.invalidate();
         },
         onError: () => {
           toast.error("Failed to delete project");
@@ -43,49 +47,64 @@ const dashboard = () => {
   };
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        {/* github link */}
-        <div className="bg-primary w-fit rounded-md px-4 py-3">
-          <div className="flex items-center">
-            <Github className="size-5 text-white" />
-            <div className="ml-2"></div>
-            <p className="text-sm font-medium text-white">
-              This project is linked to{" "}
-              <Link
-                href={project?.githubUrl ?? ""}
-                className="inline-flex items-center text-white/80 hover:underline"
-              >
-                {project?.githubUrl}
-                <ExternalLink className="ml-1 size-4" />
-              </Link>
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {projectId && (
+    <div className="space-y-6">
+      <PageHeader
+        title={project?.name ?? "Dashboard"}
+        description="Ask the codebase, upload meetings, and scan AI commit summaries."
+        actions={
+          project ? (
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
               disabled={deleteProject.isPending}
               onClick={handleDelete}
+              className="border-[#d1cdc7] text-[#cf4500] hover:bg-[#cf4500]/10 hover:text-[#cf4500]"
             >
               <Trash2 className="size-4" />
-              Delete Project
+              Delete
             </Button>
-          )}
-        </div>
-      </div>
-      <div className="mt-4"></div>
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
+          ) : null
+        }
+      />
+
+      {project?.githubUrl ? (
+        <a
+          href={project.githubUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-center gap-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] px-4 py-3 transition-colors hover:border-[#141413]/30"
+        >
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#141413] text-[#f3f0ee]">
+            <Github className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-[#696969]">
+              Connected repository
+            </p>
+            <p className="truncate text-sm font-medium text-[#141413] group-hover:underline">
+              {project.githubUrl.replace(/^https?:\/\//, "")}
+            </p>
+          </div>
+          <ExternalLink className="size-4 shrink-0 text-[#696969]" />
+        </a>
+      ) : null}
+
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-5">
         <AskQuestionCard />
         <MeetingCard />
       </div>
-      <div className="mt-8"></div>
-      <CommitLog />
+
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
+            Recent commits
+          </h2>
+          <span className="text-xs text-[#696969]">AI summarized</span>
+        </div>
+        <CommitLog />
+      </section>
     </div>
   );
 };
 
-export default dashboard;
+export default Dashboard;

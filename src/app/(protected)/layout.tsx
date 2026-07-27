@@ -1,33 +1,31 @@
-import { SidebarProvider } from '@/components/ui/sidebar'
-import { ensureDbUser } from '@/lib/ensure-user'
-import { UserButton } from '@clerk/nextjs'
-import React from 'react'
-import Appsidebar from './app-sidebar'
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { ensureDbUser } from "@/lib/ensure-user";
+import React from "react";
+import Appsidebar from "./app-sidebar";
+import { AppTopBar } from "@/components/app-top-bar";
 
 type Props = {
-    children: React.ReactNode
-}
+  children: React.ReactNode;
+};
 
-const SidebarLayout = async ({children} : Props) => {
+const SidebarLayout = async ({ children }: Props) => {
   await ensureDbUser();
 
   return (
     <SidebarProvider>
-        <Appsidebar/>
-      <main className='w-full m-2'>
-        <div className='flex items-center gap-2 border-sidebar-border border shadow- rounded-md p-2 px-4'>
-          {/* searchbar */}
-          <div className="ml-auto"></div>
-          <UserButton/>
+      <div className="flex min-h-svh w-full bg-[#f3f0ee]">
+        <Appsidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppTopBar />
+          <main className="relative flex-1 overflow-y-auto">
+            <div className="relative mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+              {children}
+            </div>
+          </main>
         </div>
-        <div className="h-4"></div>     
-        {/* main contet    */}
-        <div className="border-sidebar-border bg-sidebar border shadow rounded-md overflow-y-scroll h-[calc(100vh-6rem)] p-4">
-          {children}
-        </div>
-      </main>
+      </div>
     </SidebarProvider>
-  )
-}
+  );
+};
 
-export default SidebarLayout
+export default SidebarLayout;

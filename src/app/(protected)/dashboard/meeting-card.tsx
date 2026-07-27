@@ -4,17 +4,21 @@ import { useRouter } from "next/navigation";
 import React from "react";
 import { useDropzone } from "react-dropzone";
 import { Presentation, Upload } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { uploadFile } from "@/lib/cloudinary";
-import { CircularProgressbar } from "react-circular-progressbar";
+import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import { api } from "@/trpc/react";
 import useProjects from "@/hooks/use-projects";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useMutation } from "@tanstack/react-query";
 import axios from "axios";
 
-const MeetingCard = () => {
+type MeetingCardProps = {
+  className?: string;
+};
+
+const MeetingCard = ({ className }: MeetingCardProps) => {
   const router = useRouter();
   const { project } = useProjects();
   const [progress, setProgress] = React.useState(0);
@@ -37,12 +41,13 @@ const MeetingCard = () => {
     },
   });
 
-  const { getRootProps, getInputProps } = useDropzone({
+  const { getRootProps, getInputProps, open } = useDropzone({
     accept: {
       "audio/*": [".mp3", ".wav", ".m4a", ".ogg", ".webm"],
     },
     multiple: false,
     maxSize: 50_000_000,
+    noClick: true,
     onDrop: async (acceptedFiles) => {
       if (!project) return;
       setIsUploading(true);
@@ -85,42 +90,60 @@ const MeetingCard = () => {
   });
 
   return (
-    <Card
-      className="col-span-2 flex flex-col items-center justify-center p-10"
+    <div
+      className={cn(
+        "col-span-1 flex h-full min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#d1cdc7] bg-[#fcfbfa] p-6 transition-colors hover:border-[#141413]/40 hover:bg-white lg:col-span-2",
+        className,
+      )}
       {...getRootProps()}
     >
       {!isUploading ? (
         <>
-          <Presentation className="h-10 w-10 animate-bounce" />
-          <h3 className="mt-2 text-sm font-semibold text-gray-900">
-            Create a new meeting
+          <div className="flex size-11 items-center justify-center rounded-lg bg-[#141413] text-[#f3f0ee]">
+            <Presentation className="size-5" />
+          </div>
+          <h3 className="font-display mt-3 text-base tracking-[-0.02em] text-[#141413]">
+            Upload a meeting
           </h3>
-          <p className="mt-1 text-center text-sm text-gray-500">
-            Analyse your meeting with Gitwork.
-            <br />
-            Powered by AI.
+          <p className="mt-1.5 max-w-[220px] text-center text-sm leading-relaxed text-[#696969]">
+            Drop audio here. Gitwork extracts issues automatically.
           </p>
-          <div className="mt-6">
-            <Button disabled={isUploading}>
-              <Upload className="mr-1.5 -ml-0.5 h-5 w-5" aria-hidden="true" />
-              Upload Meeting
-              <input className="hidden" {...getInputProps()} />
+          <div className="mt-4">
+            <Button
+              disabled={isUploading || !project}
+              type="button"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                open();
+              }}
+            >
+              <Upload className="size-4" aria-hidden="true" />
+              Choose file
             </Button>
+            <input className="hidden" {...getInputProps()} />
           </div>
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center gap-2">
-          <CircularProgressbar
-            value={progress}
-            text={`${progress}%`}
-            className="size-20"
-          />
-          <p className="text-sm font-medium text-gray-900">
+        <div className="flex flex-col items-center justify-center gap-3">
+          <div className="size-20">
+            <CircularProgressbar
+              value={progress}
+              text={`${progress}%`}
+              styles={buildStyles({
+                pathColor: "#141413",
+                textColor: "#141413",
+                trailColor: "#d1cdc7",
+                textSize: "22px",
+              })}
+            />
+          </div>
+          <p className="text-sm font-medium text-[#141413]">
             Uploading… {progress}%
           </p>
         </div>
       )}
-    </Card>
+    </div>
   );
 };
 

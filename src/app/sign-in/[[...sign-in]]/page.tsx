@@ -1,5 +1,17 @@
-import { SignIn } from '@clerk/nextjs'
+import { SignIn } from "@clerk/nextjs";
+
+import { AuthShell } from "@/components/auth-shell";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 
 export default function Page() {
-  return <SignIn forceRedirectUrl="/sync-user" />
+  return (
+    <AuthShell>
+      <SignIn
+        forceRedirectUrl="/dashboard"
+        fallbackRedirectUrl="/dashboard"
+        signUpUrl="/sign-up"
+        appearance={clerkAppearance}
+      />
+    </AuthShell>
+  );
 }

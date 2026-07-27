@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,7 +16,7 @@ import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GitworkLogo } from "@/components/gitwork-logo";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -310,34 +309,30 @@ const AskQuestionCard = () => {
         <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4 text-left">
             <div className="flex items-start gap-3">
-              <Image
-                src="/logo.png"
-                alt="Gitwork"
-                width={36}
-                height={36}
-                className="mt-0.5 rounded-md"
-              />
+              <GitworkLogo size={36} className="mt-0.5 shrink-0" />
               <div className="min-w-0 flex-1">
-                <Button
-                  variant="outline"
-                  disabled={!project?.id || saveAnswer.isPending}
-                  onClick={() => {
-                    if (!project?.id) return;
-                    saveAnswer.mutate({
-                      projectId: project.id,
-                      question: askedQuestion,
-                      fileReference: fileReferences,
-                      answer: answer,
-                    });
-                  }}
-                >
-                  {saveAnswer.isPending ? "Saving…" : "Save"}
-                </Button>
                 <DialogTitle className="text-base">Gitwork Answer</DialogTitle>
                 <DialogDescription className="mt-1 line-clamp-2 text-sm">
                   {askedQuestion || "Your question"}
                 </DialogDescription>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={!project?.id || saveAnswer.isPending || !answer}
+                onClick={() => {
+                  if (!project?.id) return;
+                  saveAnswer.mutate({
+                    projectId: project.id,
+                    question: askedQuestion,
+                    fileReference: fileReferences,
+                    answer: answer,
+                  });
+                }}
+              >
+                {saveAnswer.isPending ? "Saving…" : "Save"}
+              </Button>
             </div>
           </DialogHeader>
 
@@ -398,44 +393,47 @@ const AskQuestionCard = () => {
         </DialogContent>
       </Dialog>
 
-      <Card className="relative col-span-3">
-        <CardHeader>
-          <CardTitle>Ask a Question</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit}>
-            <Textarea
-              placeholder="Which file should I edit to change the home page?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              className="min-h-24"
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button type="submit" disabled={loading || !project?.id}>
-                {loading ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Asking…
-                  </>
-                ) : (
-                  "Ask Gitwork"
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!project?.id || reindex.isPending}
-                onClick={() => {
-                  if (!project?.id) return;
-                  reindex.mutate({ projectId: project.id });
-                }}
-              >
-                {reindex.isPending ? "Re-indexing…" : "Re-index repo"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      <div className="relative col-span-1 flex h-full flex-col rounded-xl border border-[#d1cdc7] bg-white p-5 lg:col-span-3">
+        <div className="mb-4">
+          <h3 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
+            Ask the codebase
+          </h3>
+          <p className="mt-1 text-sm text-[#696969]">
+            Get grounded answers with file references.
+          </p>
+        </div>
+        <form onSubmit={onSubmit} className="flex flex-1 flex-col space-y-4">
+          <Textarea
+            placeholder="Which file should I edit to change the home page?"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            className="min-h-28 flex-1 resize-none rounded-lg border-[#d1cdc7] bg-[#fcfbfa]"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={loading || !project?.id}>
+              {loading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Asking…
+                </>
+              ) : (
+                "Ask Gitwork"
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!project?.id || reindex.isPending}
+              onClick={() => {
+                if (!project?.id) return;
+                reindex.mutate({ projectId: project.id });
+              }}
+            >
+              {reindex.isPending ? "Re-indexing…" : "Re-index repo"}
+            </Button>
+          </div>
+        </form>
+      </div>
     </>
   );
 };

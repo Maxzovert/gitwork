@@ -1,7 +1,7 @@
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Sofia_Sans } from "next/font/google";
 
 import { TRPCReactProvider } from "@/trpc/react";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -9,26 +9,33 @@ import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Gitwork",
-  description: "A Tool For GitHub Repos",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  description:
+    "Understand your GitHub repos with AI. Commits, Q&A, and meetings.",
+  icons: [{ rel: "icon", url: "/logo.svg" }],
 };
 
-const geist = Geist({
+const sofia = Sofia_Sans({
   subsets: ["latin"],
-  variable: "--font-geist-sans",
+  variable: "--font-sofia",
 });
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
-    <html lang="en" className={`${geist.variable}`}>
-      <body>
-        <TRPCReactProvider>{children}</TRPCReactProvider>
-        <Toaster richColors/>
-      </body>
-    </html>
+    <ClerkProvider
+      signInForceRedirectUrl="/dashboard"
+      signUpForceRedirectUrl="/dashboard"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
+      afterSignOutUrl="/"
+    >
+      <html lang="en" className={sofia.variable}>
+        <body className="min-h-screen font-sans antialiased">
+          <TRPCReactProvider>{children}</TRPCReactProvider>
+          <Toaster richColors position="bottom-right" />
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

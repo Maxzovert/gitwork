@@ -1,6 +1,13 @@
-export default async function Home() {
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 
-  return (
-    <h1 className="text-red-400">Hello world</h1>
-  );
+import LandingPage from "./landing-page";
+
+export default async function Home() {
+  const { userId } = await auth();
+  if (userId) {
+    redirect("/dashboard");
+  }
+
+  return <LandingPage />;
 }

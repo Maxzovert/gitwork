@@ -2,21 +2,19 @@
 
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, type RouterOutputs } from "@/trpc/react";
-import { VideoIcon } from "lucide-react";
+import { ArrowLeft, ListTodo, VideoIcon } from "lucide-react";
+import Link from "next/link";
 import React from "react";
 
 type Issue = NonNullable<
@@ -31,17 +29,17 @@ function IssueCard({ issue }: { issue: Issue }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{issue.gist}</DialogTitle>
+            <DialogTitle className="font-display">{issue.gist}</DialogTitle>
             <DialogDescription>
               {issue.createdAt.toLocaleDateString()}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-foreground text-lg font-semibold leading-relaxed">
+            <p className="text-foreground text-base font-semibold leading-relaxed">
               {issue.headline}
             </p>
-            <blockquote className="border-primary bg-muted/40 border-l-4 p-4">
-              <span className="text-muted-foreground text-sm">
+            <blockquote className="border-primary bg-muted/50 rounded-r-lg border-l-4 p-4">
+              <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
                 {issue.start} – {issue.end}
               </span>
               <p className="text-foreground mt-2 text-sm leading-relaxed">
@@ -52,18 +50,21 @@ function IssueCard({ issue }: { issue: Issue }) {
         </DialogContent>
       </Dialog>
 
-      <Card className="relative">
-        <CardHeader>
-          <CardTitle className="text-xl">{issue.gist}</CardTitle>
-          <div className="border-b" />
-          <CardDescription>{issue.headline}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={() => setOpen(true)} variant="outline" className="w-full">
-            View Details
-          </Button>
-        </CardContent>
-      </Card>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="border-border bg-card hover:border-primary/40 flex flex-col rounded-xl border p-5 text-left shadow-sm transition-all hover:shadow-md"
+      >
+        <h3 className="font-display text-foreground text-base font-semibold leading-snug">
+          {issue.gist}
+        </h3>
+        <p className="text-muted-foreground mt-2 line-clamp-3 flex-1 text-sm leading-relaxed">
+          {issue.headline}
+        </p>
+        <span className="text-primary mt-4 text-sm font-medium">
+          View details →
+        </span>
+      </button>
     </>
   );
 }
@@ -79,37 +80,57 @@ const IssueList = ({ meetingId }: Props) => {
   );
 
   if (isLoading || !meeting) {
-    return <div>Loading...</div>;
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-5 w-72" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 rounded-xl" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col gap-4 p-8">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="bg-primary/10 rounded-full p-3">
-            <VideoIcon className="text-primary h-7 w-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">{meeting.name}</h1>
-            <p className="text-muted-foreground text-sm">
-              Meeting on {meeting.createdAt.toLocaleDateString()} ·{" "}
-              {meeting.issues.length} issues
-            </p>
-          </div>
-        </div>
-        {meeting.status === "PROCESSING" && (
-          <span className="rounded-full bg-yellow-500 px-3 py-1 text-xs text-white">
-            Processing...
-          </span>
-        )}
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="-ml-2 w-fit gap-1.5" asChild>
+          <Link href="/meetings">
+            <ArrowLeft className="size-4" />
+            Back to meetings
+          </Link>
+        </Button>
+
+        <PageHeader
+          title={meeting.name}
+          description={`Meeting on ${meeting.createdAt.toLocaleDateString()} · ${meeting.issues.length} issues`}
+          actions={
+            <div className="flex items-center gap-3">
+              <div className="bg-foreground text-background flex size-10 items-center justify-center rounded-xl">
+                <VideoIcon className="size-5" />
+              </div>
+              <StatusBadge status={meeting.status} />
+            </div>
+          }
+        />
       </div>
 
       {meeting.issues.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          {meeting.status === "PROCESSING"
-            ? "Issues will appear here once processing finishes."
-            : "No issues found for this meeting."}
-        </p>
+        <EmptyState
+          icon={ListTodo}
+          title={
+            meeting.status === "PROCESSING"
+              ? "Still processing"
+              : "No issues found"
+          }
+          description={
+            meeting.status === "PROCESSING"
+              ? "Issues will appear here once processing finishes."
+              : "No issues were extracted for this meeting."
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {meeting.issues.map((issue) => (
