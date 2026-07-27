@@ -192,6 +192,32 @@ export const projectRouter = createTRPCRouter({
       })
     }),
 
+    getMeetingById: protectedProcedure
+      .input(z.object({ meetingId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        const meeting = await ctx.db.meeting.findFirst({
+          where: {
+            id: input.meetingId,
+            project: {
+              userToProjects: {
+                some: { userId: ctx.user.userId! },
+              },
+            },
+          },
+          include: {
+            issues: {
+              orderBy: { start: "asc" },
+            },
+          },
+        });
+
+        if (!meeting) {
+          throw new Error("Meeting not found");
+        }
+
+        return meeting;
+      }),
+
     deleteMeeting: protectedProcedure
       .input(z.object({ meetingId: z.string() }))
       .mutation(async ({ ctx, input }) => {
