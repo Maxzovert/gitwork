@@ -29,7 +29,7 @@ import {
 import { askQuestion } from "./action";
 import { readStreamableValue } from "@ai-sdk/rsc";
 
-type FileReference = {
+export type FileReference = {
   filename: string;
   sourceCode: string;
   summary: string;
@@ -63,38 +63,38 @@ function languageFromFilename(filename: string) {
   }
 }
 
-function MarkdownAnswer({ content }: { content: string }) {
+export function MarkdownAnswer({ content }: { content: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
         h1: ({ children }) => (
-          <h1 className="mt-4 mb-2 text-xl font-semibold tracking-tight text-foreground first:mt-0">
+          <h1 className="text-foreground mt-4 mb-2 text-xl font-semibold tracking-tight first:mt-0">
             {children}
           </h1>
         ),
         h2: ({ children }) => (
-          <h2 className="mt-4 mb-2 text-lg font-semibold tracking-tight text-foreground">
+          <h2 className="text-foreground mt-4 mb-2 text-lg font-semibold tracking-tight">
             {children}
           </h2>
         ),
         h3: ({ children }) => (
-          <h3 className="mt-3 mb-1.5 text-base font-semibold text-foreground">
+          <h3 className="text-foreground mt-3 mb-1.5 text-base font-semibold">
             {children}
           </h3>
         ),
         p: ({ children }) => (
-          <p className="mb-3 text-sm leading-7 text-foreground/90 last:mb-0">
+          <p className="text-foreground/90 mb-3 text-sm leading-7 last:mb-0">
             {children}
           </p>
         ),
         ul: ({ children }) => (
-          <ul className="mb-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-foreground/90">
+          <ul className="text-foreground/90 mb-3 list-disc space-y-1.5 pl-5 text-sm leading-6">
             {children}
           </ul>
         ),
         ol: ({ children }) => (
-          <ol className="mb-3 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-foreground/90">
+          <ol className="text-foreground/90 mb-3 list-decimal space-y-1.5 pl-5 text-sm leading-6">
             {children}
           </ol>
         ),
@@ -104,16 +104,16 @@ function MarkdownAnswer({ content }: { content: string }) {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="font-medium text-primary underline-offset-4 hover:underline"
+            className="text-primary font-medium underline-offset-4 hover:underline"
           >
             {children}
           </a>
         ),
         strong: ({ children }) => (
-          <strong className="font-semibold text-foreground">{children}</strong>
+          <strong className="text-foreground font-semibold">{children}</strong>
         ),
         blockquote: ({ children }) => (
-          <blockquote className="mb-3 border-l-2 border-primary/40 pl-3 text-sm text-muted-foreground italic">
+          <blockquote className="border-primary/40 text-muted-foreground mb-3 border-l-2 pl-3 text-sm italic">
             {children}
           </blockquote>
         ),
@@ -122,7 +122,7 @@ function MarkdownAnswer({ content }: { content: string }) {
           if (!isBlock) {
             return (
               <code
-                className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8rem] text-foreground"
+                className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono text-[0.8rem]"
                 {...props}
               >
                 {children}
@@ -130,13 +130,16 @@ function MarkdownAnswer({ content }: { content: string }) {
             );
           }
           return (
-            <code className={cn("font-mono text-[0.8rem]", className)} {...props}>
+            <code
+              className={cn("font-mono text-[0.8rem]", className)}
+              {...props}
+            >
               {children}
             </code>
           );
         },
         pre: ({ children }) => (
-          <pre className="mb-3 overflow-x-auto rounded-lg border border-border bg-zinc-950 p-3 text-[0.8rem] leading-6 text-zinc-100">
+          <pre className="border-border mb-3 overflow-x-auto rounded-lg border bg-zinc-950 p-3 text-[0.8rem] leading-6 text-zinc-100">
             {children}
           </pre>
         ),
@@ -146,7 +149,7 @@ function MarkdownAnswer({ content }: { content: string }) {
           </div>
         ),
         th: ({ children }) => (
-          <th className="border-b bg-muted/60 px-3 py-2 font-medium">
+          <th className="bg-muted/60 border-b px-3 py-2 font-medium">
             {children}
           </th>
         ),
@@ -160,12 +163,14 @@ function MarkdownAnswer({ content }: { content: string }) {
   );
 }
 
-function FileReferences({ files }: { files: FileReference[] }) {
-  const [active, setActive] = useState<string | null>(files[0]?.filename ?? null);
+export function FileReferences({ files }: { files: FileReference[] }) {
+  const [active, setActive] = useState<string | null>(
+    files[0]?.filename ?? null,
+  );
 
   if (!files.length) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         No file references were retrieved for this answer.
       </p>
     );
@@ -207,14 +212,14 @@ function FileReferences({ files }: { files: FileReference[] }) {
         })}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border">
-        <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+      <div className="border-border overflow-hidden rounded-lg border">
+        <div className="bg-muted/40 flex items-center justify-between gap-2 border-b px-3 py-2">
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs font-medium text-foreground">
+            <p className="text-foreground truncate font-mono text-xs font-medium">
               {selected.filename}
             </p>
             {selected.summary ? (
-              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+              <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
                 {selected.summary}
               </p>
             ) : null}
@@ -231,7 +236,9 @@ function FileReferences({ files }: { files: FileReference[] }) {
           </Button>
         </div>
         <pre className="max-h-64 overflow-auto bg-zinc-950 p-3 font-mono text-[0.75rem] leading-5 text-zinc-100">
-          <code className={`language-${languageFromFilename(selected.filename)}`}>
+          <code
+            className={`language-${languageFromFilename(selected.filename)}`}
+          >
             {selected.sourceCode}
           </code>
         </pre>
@@ -253,6 +260,11 @@ const AskQuestionCard = () => {
   const reindex = api.project.reindexProject.useMutation({
     onSuccess: () =>
       toast.success("Re-indexing started — wait a few minutes, then ask again"),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const saveAnswer = api.project.saveAnswer.useMutation({
+    onSuccess: () => toast.success("Answer saved"),
     onError: (err) => toast.error(err.message),
   });
 
@@ -306,6 +318,21 @@ const AskQuestionCard = () => {
                 className="mt-0.5 rounded-md"
               />
               <div className="min-w-0 flex-1">
+                <Button
+                  variant="outline"
+                  disabled={!project?.id || saveAnswer.isPending}
+                  onClick={() => {
+                    if (!project?.id) return;
+                    saveAnswer.mutate({
+                      projectId: project.id,
+                      question: askedQuestion,
+                      fileReference: fileReferences,
+                      answer: answer,
+                    });
+                  }}
+                >
+                  {saveAnswer.isPending ? "Saving…" : "Save"}
+                </Button>
                 <DialogTitle className="text-base">Gitwork Answer</DialogTitle>
                 <DialogDescription className="mt-1 line-clamp-2 text-sm">
                   {askedQuestion || "Your question"}
@@ -316,26 +343,26 @@ const AskQuestionCard = () => {
 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             <section>
-              <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
                 Answer
               </h3>
               {loading && !answer ? (
-                <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                <div className="bg-muted/30 text-muted-foreground flex items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-sm">
                   <Loader2 className="size-4 animate-spin" />
                   Thinking through your codebase…
                 </div>
               ) : answer ? (
-                <div className="rounded-lg border bg-card px-4 py-3">
+                <div className="bg-card rounded-lg border px-4 py-3">
                   <MarkdownAnswer content={answer} />
                   {loading ? (
-                    <span className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="text-muted-foreground mt-2 inline-flex items-center gap-1.5 text-xs">
                       <Loader2 className="size-3 animate-spin" />
                       Streaming…
                     </span>
                   ) : null}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No answer yet.</p>
+                <p className="text-muted-foreground text-sm">No answer yet.</p>
               )}
             </section>
 
@@ -345,21 +372,21 @@ const AskQuestionCard = () => {
                 onClick={() => setRefsOpen((v) => !v)}
                 className="mb-2 flex w-full items-center justify-between gap-2 text-left"
               >
-                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
                   File references
                   {fileReferences.length > 0
                     ? ` (${fileReferences.length})`
                     : ""}
                 </h3>
                 {refsOpen ? (
-                  <ChevronDown className="size-4 text-muted-foreground" />
+                  <ChevronDown className="text-muted-foreground size-4" />
                 ) : (
-                  <ChevronRight className="size-4 text-muted-foreground" />
+                  <ChevronRight className="text-muted-foreground size-4" />
                 )}
               </button>
               {refsOpen ? (
                 loading && fileReferences.length === 0 ? (
-                  <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+                  <div className="bg-muted/30 text-muted-foreground rounded-lg border border-dashed px-4 py-4 text-sm">
                     Gathering relevant files…
                   </div>
                 ) : (

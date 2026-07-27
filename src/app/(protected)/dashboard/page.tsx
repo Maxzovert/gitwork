@@ -37,7 +37,7 @@ const dashboard = () => {
         </div>
       </div>
       <div className="mt-4"></div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
         <AskQuestionCard/>
       </div>
       <div className="mt-8"></div>
