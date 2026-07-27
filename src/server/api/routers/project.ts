@@ -82,6 +82,29 @@ export const projectRouter = createTRPCRouter({
     });
   }),
 
+  deleteProject: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: {
+          id: input.projectId,
+          deletedAt: null,
+          userToProjects: {
+            some: { userId: ctx.user.userId! },
+          },
+        },
+      });
+
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      return await ctx.db.project.update({
+        where: { id: input.projectId },
+        data: { deletedAt: new Date() },
+      });
+    }),
+
   getCommits: protectedProcedure
     .input(
       z.object({
@@ -157,6 +180,7 @@ export const projectRouter = createTRPCRouter({
           status: "PROCESSING",
         }
       })
+      return meeting;
     }),
 
     getMeetings: protectedProcedure.input(z.object({projectId : z.string()})).query(async ({ctx, input}) => {
@@ -166,5 +190,31 @@ export const projectRouter = createTRPCRouter({
         },
         include: {issues: true}
       })
-    })
+    }),
+
+    deleteMeeting: protectedProcedure
+      .input(z.object({ meetingId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const meeting = await ctx.db.meeting.findFirst({
+          where: {
+            id: input.meetingId,
+            project: {
+              userToProjects: {
+                some: { userId: ctx.user.userId! },
+              },
+            },
+          },
+        });
+
+        if (!meeting) {
+          throw new Error("Meeting not found");
+        }
+
+        await ctx.db.issue.deleteMany({
+          where: { meetingId: input.meetingId },
+        });
+        return await ctx.db.meeting.delete({
+          where: { id: input.meetingId },
+        });
+      }),
 });

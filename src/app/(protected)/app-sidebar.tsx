@@ -14,7 +14,13 @@ import {
 } from "@/components/ui/sidebar";
 import useProjects from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
-import { Bot, CreditCard, LayoutDashboard, Plus, Presentation } from "lucide-react";
+import {
+  Bot,
+  CreditCard,
+  LayoutDashboard,
+  Plus,
+  Presentation,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,8 +28,9 @@ import React from "react";
 
 function Appsidebar() {
   const pathname = usePathname();
-  const {open} = useSidebar();
-  const {projects , projectId , setProjectId} = useProjects();
+  const { open } = useSidebar();
+  const { projects, projectId, setProjectId } = useProjects();
+
   const items = [
     {
       title: "Dashboard",
@@ -46,18 +53,18 @@ function Appsidebar() {
       icon: CreditCard,
     },
   ];
+
   return (
     <Sidebar collapsible="icon" variant="floating">
       <SidebarHeader>
-        <div className="flex items-center gap-2 ml-2">
-            <Image src='/logo.png' alt="logo" width={40} height={40}/>
-            {open && (
-                <h1 className="text-xl font-bold text-primary/80">Gitwork</h1>
-            )}
+        <div className="ml-2 flex items-center gap-2">
+          <Image src="/logo.png" alt="logo" width={40} height={40} />
+          {open && (
+            <h1 className="text-primary/80 text-xl font-bold">Gitwork</h1>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent>
-        {/* Application group */}
         <SidebarGroup>
           <SidebarGroupLabel>Application</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -83,7 +90,6 @@ function Appsidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Project List */}
         <SidebarGroup>
           <SidebarGroupLabel>Your Projects</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -95,8 +101,10 @@ function Appsidebar() {
                       <div onClick={() => setProjectId(project.id)}>
                         <div
                           className={cn(
-                            "text-primaryS flex size-6 items-center justify-center rounded-sm border bg-white text-sm cursor-pointer",
-                            { "bg-primary text-white": project.id === projectId },
+                            "text-primaryS flex size-6 cursor-pointer items-center justify-center rounded-sm border bg-white text-sm",
+                            {
+                              "bg-primary text-white": project.id === projectId,
+                            },
                           )}
                         >
                           {project.name[0]}
@@ -110,29 +118,34 @@ function Appsidebar() {
 
               <div className="h-2"></div>
               {open ? (
-              <SidebarMenuItem>
-                <Link href='/create'>
-              <Button size='sm' variant={'outline'} className="w-fit cursor-pointer">
-                <Plus/>
-                Create Project
-              </Button>
-                </Link>
-              </SidebarMenuItem> 
+                <SidebarMenuItem>
+                  <Link href="/create">
+                    <Button
+                      size="sm"
+                      variant={"outline"}
+                      className="w-fit cursor-pointer"
+                    >
+                      <Plus />
+                      Create Project
+                    </Button>
+                  </Link>
+                </SidebarMenuItem>
               ) : (
                 <SidebarMenuItem>
-                <Link href='/create'>
-              <Button size='sm' variant={'outline'} className="w-fit cursor-pointer">
-                <Plus/>
-              </Button>
-                </Link>
-              </SidebarMenuItem>
-              )
-              }
+                  <Link href="/create">
+                    <Button
+                      size="sm"
+                      variant={"outline"}
+                      className="w-fit cursor-pointer"
+                    >
+                      <Plus />
+                    </Button>
+                  </Link>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-
       </SidebarContent>
     </Sidebar>
   );

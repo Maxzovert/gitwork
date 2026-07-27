@@ -5,8 +5,8 @@ import { api } from "@/trpc/react";
 import Link from "next/link";
 import React from "react";
 import MeetingCard from "../dashboard/meeting-card";
-import { Badge } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 const MeetingsPage = () => {
   const { projectId } = useProjects();
@@ -17,6 +17,8 @@ const MeetingsPage = () => {
       refetchInterval: 4000,
     },
   );
+  const deleteMeeting = api.project.deleteMeeting.useMutation();
+  const utils = api.useUtils();
 
   return (
     <>
@@ -39,28 +41,60 @@ const MeetingsPage = () => {
                 >
                   {meeting.name}
                 </Link>
-                {
-                  meeting.status === 'PROCESSING' && (
-                    <Badge className="bg-yellow-500 text-white">Processing...</Badge>
-                  )
-                }
+                {meeting.status === "PROCESSING" && (
+                  <span className="rounded-full bg-yellow-500 px-2 py-0.5 text-xs text-white">
+                    Processing...
+                  </span>
+                )}
               </div>
-              <div className="flex items-center text-xs to-gray-500 gap-x-2">
-                <p className="whitespace-nowwrap">
+              <div className="flex items-center gap-x-2 text-xs text-gray-500">
+                <p className="whitespace-nowrap">
                   {meeting.createdAt.toLocaleDateString()}
                 </p>
                 <p className="truncate">{meeting.issues.length} issues</p>
               </div>
             </div>
 
-            <div className="flex items-center flex-none gap-x-4">
+            <div className="flex flex-none items-center gap-x-4">
               <Link href={`/meetings/${meeting.id}`}>
-                <Button variant="outline">
-                  View Meetings
+                <Button type="button" variant="outline">
+                  View Meeting
                 </Button>
               </Link>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={deleteMeeting.isPending}
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (
+                    !confirm(
+                      `Delete meeting "${meeting.name}"? This cannot be undone.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  deleteMeeting.mutate(
+                    { meetingId: meeting.id },
+                    {
+                      onSuccess: () => {
+                        toast.success("Meeting deleted successfully");
+                        void utils.project.getMeetings.invalidate({
+                          projectId: projectId ?? "",
+                        });
+                      },
+                      onError: () => {
+                        toast.error("Failed to delete meeting");
+                      },
+                    },
+                  );
+                }}
+              >
+                Delete
+              </Button>
             </div>
-
           </li>
         ))}
       </ul>
