@@ -36,7 +36,7 @@ function Appsidebar() {
       icon: Bot,
     },
     {
-      title: "Neetings",
+      title: "Meetings",
       url: "/meetings",
       icon: Presentation,
     },
