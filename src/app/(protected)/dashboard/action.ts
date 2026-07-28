@@ -18,6 +18,17 @@ type SourceMatch = {
   summary: string;
 };
 
+async function getProjectBranch(projectId: string) {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: {
+      activeBranch: true,
+      defaultBranch: true,
+    },
+  });
+  return project?.activeBranch ?? project?.defaultBranch ?? null;
+}
+
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -110,6 +121,7 @@ function mergeUnique(primary: SourceMatch[], secondary: SourceMatch[], limit = 1
 
 async function searchByKeywords(projectId: string, terms: string[]) {
   if (!terms.length) return [] as SourceMatch[];
+  const branch = await getProjectBranch(projectId);
 
   const rows: SourceMatch[] = [];
   for (const term of terms) {
@@ -119,6 +131,7 @@ async function searchByKeywords(projectId: string, terms: string[]) {
       SELECT "filename", "sourcecode", "summary"
       FROM "SourceCodeEmbeddings"
       WHERE "projectId" = $1
+        AND ($3::text IS NULL OR "branch" = $3)
         AND (
           "filename" ILIKE $2
           OR "sourcecode" ILIKE $2
@@ -128,6 +141,7 @@ async function searchByKeywords(projectId: string, terms: string[]) {
       `,
       projectId,
       pattern,
+      branch,
     )) as SourceMatch[];
     rows.push(...hits);
   }
@@ -135,17 +149,20 @@ async function searchByKeywords(projectId: string, terms: string[]) {
 }
 
 async function searchByVector(projectId: string, vectorQuery: string) {
+  const branch = await getProjectBranch(projectId);
   return (await db.$queryRawUnsafe(
     `
     SELECT "filename", "sourcecode", "summary"
     FROM "SourceCodeEmbeddings"
     WHERE "projectId" = $1
+      AND ($3::text IS NULL OR "branch" = $3)
       AND "summaryEmbeddings" IS NOT NULL
     ORDER BY "summaryEmbeddings" <=> $2::vector
     LIMIT 10
     `,
     projectId,
     vectorQuery,
+    branch,
   )) as SourceMatch[];
 }
 

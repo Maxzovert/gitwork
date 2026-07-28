@@ -17,6 +17,13 @@ enum ProjectRole {
     MEMBER
 }
 
+enum IndexingJobStatus {
+    QUEUED
+    PROCESSING
+    COMPLETED
+    FAILED
+}
+
 model User {
     id        String   @id @default(cuid())
     createdAt DateTime @default(now())
@@ -33,6 +40,7 @@ model User {
     questionsAsked  Question[]
     invitesCreated  ProjectInvite[]
     meetingsCreated Meeting[]
+    indexingJobs    IndexingJob[]
 }
 
 model Project {
@@ -42,6 +50,11 @@ model Project {
 
     name      String
     githubUrl String
+
+    defaultBranch      String?
+    activeBranch       String?
+    lastIndexedAt      DateTime?
+    lastIndexedCommitSha String?
 
     webhookSecret    String?
     githubWebhookId  Int?
@@ -54,6 +67,7 @@ model Project {
     sourceCodeEmbeddings SourceCodeEmbeddings[]
     savedQuestions       Question[]
     meetings             Meeting[]
+    indexingJobs         IndexingJob[]
 }
 
 model userToProject {
@@ -90,15 +104,45 @@ model ProjectInvite {
 }
 
 model SourceCodeEmbeddings {
-    id String @id @default(cuid())
+    id        String   @id @default(cuid())
+    indexedAt DateTime @default(now())
 
     summaryEmbeddings Unsupported("vector(768)")?
     sourcecode        String
     filename          String
     summary           String
+    branch            String   @default("")
+    blobSha           String?
+    contentHash       String?
 
     projectId String
     project   Project @relation(fields: [projectId], references: [id])
+
+    @@unique([projectId, branch, filename])
+    @@index([projectId, branch])
+}
+
+model IndexingJob {
+    id            String            @id @default(cuid())
+    createdAt     DateTime          @default(now())
+    updatedAt     DateTime          @updatedAt
+    startedAt     DateTime          @default(now())
+    finishedAt    DateTime?
+    status        IndexingJobStatus @default(QUEUED)
+    branch        String
+    totalFiles    Int               @default(0)
+    processedFiles Int              @default(0)
+    failedFiles   Int               @default(0)
+    errorMessage  String?
+    commitSha     String?
+
+    projectId String
+    project   Project @relation(fields: [projectId], references: [id])
+
+    triggeredByUserId String?
+    triggeredBy       User?   @relation(fields: [triggeredByUserId], references: [id])
+
+    @@index([projectId, createdAt])
 }
 
 model Question {

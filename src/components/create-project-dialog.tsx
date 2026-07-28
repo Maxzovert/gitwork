@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -22,6 +23,7 @@ type FormInput = {
   repoUrl: string;
   projectName: string;
   githubToken?: string;
+  branch?: string;
 };
 
 type CreateProjectDialogProps = {
@@ -34,11 +36,31 @@ export function CreateProjectDialog({
   onOpenChange,
 }: CreateProjectDialogProps) {
   const router = useRouter();
-  const { register, handleSubmit, reset } = useForm<FormInput>();
+  const { register, handleSubmit, reset, watch, setValue } = useForm<FormInput>();
   const createProject = api.project.createProject.useMutation();
   const refetch = useRefresh();
   const { setProjectId } = useProjects();
   const utils = api.useUtils();
+  const repoUrl = watch("repoUrl");
+  const githubToken = watch("githubToken");
+  const branch = watch("branch");
+
+  const branchesQuery = api.project.getBranches.useQuery(
+    {
+      githubUrl: repoUrl ?? "",
+      githubToken,
+    },
+    {
+      enabled: open && /^https:\/\/github\.com\/.+\/.+/.test(repoUrl ?? ""),
+      retry: false,
+    },
+  );
+
+  React.useEffect(() => {
+    if (!branch && branchesQuery.data?.defaultBranch) {
+      setValue("branch", branchesQuery.data.defaultBranch);
+    }
+  }, [branch, branchesQuery.data?.defaultBranch, setValue]);
 
   function onSubmit(data: FormInput) {
     createProject.mutate(
@@ -46,6 +68,7 @@ export function CreateProjectDialog({
         githubUrl: data.repoUrl,
         name: data.projectName,
         githubToken: data.githubToken,
+        branch: data.branch,
       },
       {
         onSuccess: async (project) => {
@@ -134,6 +157,38 @@ export function CreateProjectDialog({
               placeholder="Needed for private repositories"
               className="h-11 rounded-xl border-[#d1cdc7] bg-white text-[#141413] placeholder:text-[#696969]"
             />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="create-branch"
+              className="text-sm font-medium text-[#141413]"
+            >
+              Branch
+            </label>
+            <select
+              id="create-branch"
+              {...register("branch")}
+              disabled={branchesQuery.isLoading || !branchesQuery.data?.branches.length}
+              className="h-11 w-full rounded-xl border border-[#d1cdc7] bg-white px-3 text-sm text-[#141413] disabled:opacity-60"
+            >
+              {branchesQuery.data?.branches?.length ? (
+                branchesQuery.data.branches.map((branchName) => (
+                  <option key={branchName} value={branchName}>
+                    {branchName}
+                  </option>
+                ))
+              ) : (
+                <option value="">
+                  {branchesQuery.isLoading
+                    ? "Loading branches…"
+                    : "Enter repo URL to load branches"}
+                </option>
+              )}
+            </select>
+            <p className="text-xs text-[#696969]">
+              This branch becomes the initial codebase snapshot for Q&A and indexing.
+            </p>
           </div>
 
           <div className="flex gap-2 pt-2">

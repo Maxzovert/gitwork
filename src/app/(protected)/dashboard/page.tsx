@@ -15,6 +15,10 @@ const Dashboard = () => {
   const { project, projects, projectId, setProjectId } = useProjects();
   const utils = api.useUtils();
   const deleteProject = api.project.deleteProject.useMutation();
+  const indexingStatus = api.project.getIndexingStatus.useQuery(
+    { projectId: projectId ?? "" },
+    { enabled: Boolean(projectId) },
+  );
   const { data: membership } = api.project.getMyMembership.useQuery(
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
@@ -88,6 +92,14 @@ const Dashboard = () => {
             </p>
             <p className="truncate text-sm font-medium text-[#141413] group-hover:underline">
               {project.githubUrl.replace(/^https?:\/\//, "")}
+            </p>
+            <p className="mt-1 text-xs text-[#696969]">
+              Branch: {indexingStatus.data?.project?.activeBranch ?? "Unknown"}
+              {indexingStatus.data?.project?.lastIndexedAt
+                ? ` · Indexed ${new Date(
+                    indexingStatus.data.project.lastIndexedAt,
+                  ).toLocaleString()}`
+                : ""}
             </p>
           </div>
           <ExternalLink className="size-4 shrink-0 text-[#696969]" />

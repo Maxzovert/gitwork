@@ -9,6 +9,7 @@ import {
   Copy,
   FileCode2,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GitworkLogo } from "@/components/gitwork-logo";
 import { Textarea } from "@/components/ui/textarea";
+import { StatusBadge } from "@/components/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -322,9 +324,42 @@ const AskQuestionCard = () => {
   const [askedQuestion, setAskedQuestion] = useState("");
   const [refsOpen, setRefsOpen] = useState(true);
 
-  const reindex = api.project.reindexProject.useMutation({
-    onSuccess: () =>
-      toast.success("Re-indexing started — wait a few minutes, then ask again"),
+  const membership = api.project.getMyMembership.useQuery(
+    { projectId: project?.id ?? "" },
+    { enabled: Boolean(project?.id) },
+  );
+  const indexingStatus = api.project.getIndexingStatus.useQuery(
+    { projectId: project?.id ?? "" },
+    {
+      enabled: Boolean(project?.id),
+      refetchInterval: 3000,
+    },
+  );
+  const branches = api.project.getBranches.useQuery(
+    {
+      githubUrl: project?.githubUrl ?? "",
+    },
+    {
+      enabled: Boolean(project?.githubUrl),
+      retry: false,
+    },
+  );
+  const [selectedBranch, setSelectedBranch] = useState("");
+
+  React.useEffect(() => {
+    const active = indexingStatus.data?.project?.activeBranch;
+    if (active) {
+      setSelectedBranch(active);
+    } else if (branches.data?.defaultBranch) {
+      setSelectedBranch(branches.data.defaultBranch);
+    }
+  }, [branches.data?.defaultBranch, indexingStatus.data?.project?.activeBranch]);
+
+  const startIndexing = api.project.startIndexing.useMutation({
+    onSuccess: () => {
+      toast.success("Indexing started — progress will update below");
+      void indexingStatus.refetch();
+    },
     onError: (err) => toast.error(err.message),
   });
 
@@ -472,6 +507,111 @@ const AskQuestionCard = () => {
             Get grounded answers with file references.
           </p>
         </div>
+        <div className="mb-4 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-[#141413]">Indexing</p>
+                <StatusBadge
+                  status={indexingStatus.data?.job?.status ?? "IDLE"}
+                />
+              </div>
+              <p className="text-xs text-[#696969]">
+                Active branch:{" "}
+                {indexingStatus.data?.project?.activeBranch ??
+                  branches.data?.defaultBranch ??
+                  "Unknown"}
+                {indexingStatus.data?.project?.lastIndexedAt
+                  ? ` · Last indexed ${new Date(
+                      indexingStatus.data.project.lastIndexedAt,
+                    ).toLocaleString()}`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                disabled={
+                  membership.data?.role !== "OWNER" ||
+                  !branches.data?.branches?.length ||
+                  startIndexing.isPending
+                }
+                className="h-9 rounded-[20px] border border-[#d1cdc7] bg-white px-3 text-sm text-[#141413]"
+              >
+                {(branches.data?.branches ?? []).map((branchName) => (
+                  <option key={branchName} value={branchName}>
+                    {branchName}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  !project?.id ||
+                  membership.data?.role !== "OWNER" ||
+                  !selectedBranch ||
+                  startIndexing.isPending
+                }
+                onClick={() => {
+                  if (!project?.id || !selectedBranch) return;
+                  startIndexing.mutate({
+                    projectId: project.id,
+                    branch: selectedBranch,
+                  });
+                }}
+              >
+                <RefreshCw
+                  className={cn(
+                    "size-4",
+                    startIndexing.isPending && "animate-spin",
+                  )}
+                />
+                {startIndexing.isPending ? "Re-indexing…" : "Re-index repo"}
+              </Button>
+            </div>
+          </div>
+
+          {indexingStatus.data?.job ? (
+            <div className="mt-3 space-y-2">
+              <div className="h-2 overflow-hidden rounded-full bg-[#eceae6]">
+                <div
+                  className="h-full bg-[#141413] transition-all"
+                  style={{
+                    width: `${
+                      indexingStatus.data.job.totalFiles
+                        ? Math.max(
+                            6,
+                            Math.round(
+                              (indexingStatus.data.job.processedFiles /
+                                indexingStatus.data.job.totalFiles) *
+                                100,
+                            ),
+                          )
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-[#696969]">
+                {indexingStatus.data.job.processedFiles}/
+                {indexingStatus.data.job.totalFiles || 0} files processed
+                {indexingStatus.data.job.failedFiles
+                  ? ` · ${indexingStatus.data.job.failedFiles} failed`
+                  : ""}
+                {indexingStatus.data.job.branch
+                  ? ` · Branch ${indexingStatus.data.job.branch}`
+                  : ""}
+              </p>
+              {indexingStatus.data.job.errorMessage ? (
+                <p className="text-xs text-[#cf4500]">
+                  {indexingStatus.data.job.errorMessage}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         <form onSubmit={onSubmit} className="flex flex-1 flex-col space-y-4">
           <Textarea
             placeholder="Which file should I edit to change the home page?"
@@ -489,17 +629,6 @@ const AskQuestionCard = () => {
               ) : (
                 "Ask Gitwork"
               )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!project?.id || reindex.isPending}
-              onClick={() => {
-                if (!project?.id) return;
-                reindex.mutate({ projectId: project.id });
-              }}
-            >
-              {reindex.isPending ? "Re-indexing…" : "Re-index repo"}
             </Button>
           </div>
         </form>

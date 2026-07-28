@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { GithubRepoLoader } from "@langchain/community/document_loaders/web/github";
 import dotenv from "dotenv";
 import { Document } from "@langchain/core/documents";
@@ -6,11 +7,12 @@ import { Prisma } from "@prisma/client";
 import { summariseCode, generateEmbeddings as embedSummary } from "./gemini";
 import { db } from "@/server/db";
 import { octokit } from "./github";
+import { parseGithubUrl } from "./github-url";
 
 dotenv.config();
 
-const MAX_FILES_TO_INDEX = 50;
-const DELAY_BETWEEN_FILES_MS = 2_500;
+const MAX_FILES_TO_INDEX = 150;
+const DELAY_BETWEEN_FILES_MS = 500;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -102,23 +104,52 @@ const pickFilesToIndex = (docs: Document[]) => {
   return picked;
 };
 
-const parseGithubUrl = (githubUrl: string) => {
-  const cleaned = githubUrl.trim().replace(/\.git$/, "").replace(/\/$/, "");
-  const [owner, repo] = cleaned.split("/").slice(-2);
-  if (!owner || !repo) {
-    throw new Error("Invalid github url");
-  }
-  return { owner, repo, cleaned };
-};
+function getGithubClient(githubToken?: string) {
+  return githubToken ? new Octokit({ auth: githubToken }) : octokit;
+}
 
 const getDefaultBranch = async (githubUrl: string, githubToken?: string) => {
   const { owner, repo } = parseGithubUrl(githubUrl);
-  const client = githubToken
-    ? new Octokit({ auth: githubToken })
-    : octokit;
+  const client = getGithubClient(githubToken);
   const { data } = await client.rest.repos.get({ owner, repo });
   return data.default_branch;
 };
+
+async function getBranchHeadSha(
+  githubUrl: string,
+  branch: string,
+  githubToken?: string,
+) {
+  const { owner, repo } = parseGithubUrl(githubUrl);
+  const client = getGithubClient(githubToken);
+  const { data } = await client.rest.repos.getBranch({
+    owner,
+    repo,
+    branch,
+  });
+  return data.commit.sha;
+}
+
+export async function listGithubBranches(
+  githubUrl: string,
+  githubToken?: string,
+) {
+  const { owner, repo } = parseGithubUrl(githubUrl);
+  const client = getGithubClient(githubToken);
+  const [repoData, branches] = await Promise.all([
+    client.rest.repos.get({ owner, repo }),
+    client.paginate(client.rest.repos.listBranches, {
+      owner,
+      repo,
+      per_page: 100,
+    }),
+  ]);
+
+  return {
+    defaultBranch: repoData.data.default_branch,
+    branches: branches.map((branch) => branch.name),
+  };
+}
 
 /**
  * Prisma parameterized `$1::vector` often fails to cast on Neon/pgvector.
@@ -168,12 +199,20 @@ async function embedForRetrieval(
 
 /** Fill summaryEmbeddings for rows that were stored with NULL vectors. */
 export async function backfillNullEmbeddings(projectId: string) {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { activeBranch: true, defaultBranch: true },
+  });
+  const branch = project?.activeBranch ?? project?.defaultBranch;
+
   const nullRows = (await db.$queryRawUnsafe(
     `SELECT id, filename, summary, sourcecode
      FROM "SourceCodeEmbeddings"
      WHERE "projectId" = $1
+       AND ($2::text IS NULL OR "branch" = $2)
        AND "summaryEmbeddings" IS NULL`,
     projectId,
+    branch ?? null,
   )) as Array<{
     id: string;
     filename: string;
@@ -218,13 +257,13 @@ export async function backfillNullEmbeddings(projectId: string) {
 
 export const loadGithubRepo = async (
   githubUrl: string,
+  branch: string,
   githubToken?: string,
 ) => {
   const token = githubToken || process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GitHub token is required");
 
   const { cleaned } = parseGithubUrl(githubUrl);
-  const branch = await getDefaultBranch(cleaned, githubToken);
   console.log(`Loading GitHub repo ${cleaned} on branch ${branch}`);
 
   const loader = new GithubRepoLoader(cleaned, {
@@ -247,71 +286,236 @@ export const loadGithubRepo = async (
   return docs;
 };
 
-export const indexGithubRepo = async (
+function hashContent(content: string) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+async function processFileForIndexing(params: {
+  projectId: string;
+  branch: string;
+  doc: Document;
+}) {
+  const { projectId, branch, doc } = params;
+  const filename = String(doc.metadata.source ?? "unknown");
+  const sourcecode = JSON.parse(JSON.stringify(doc.pageContent)) as string;
+  const summary = await summariseCode(doc);
+  const embedding = await embedForRetrieval(filename, summary, sourcecode);
+  const contentHash = hashContent(sourcecode);
+  const blobSha =
+    typeof doc.metadata.sha === "string"
+      ? doc.metadata.sha
+      : typeof doc.metadata.oid === "string"
+        ? doc.metadata.oid
+        : null;
+
+  const row = await db.sourceCodeEmbeddings.upsert({
+    where: {
+      projectId_branch_filename: {
+        projectId,
+        branch,
+        filename,
+      },
+    },
+    update: {
+      summary,
+      sourcecode,
+      contentHash,
+      blobSha,
+      indexedAt: new Date(),
+    },
+    create: {
+      projectId,
+      branch,
+      filename,
+      summary,
+      sourcecode,
+      contentHash,
+      blobSha,
+    },
+  });
+
+  await saveSummaryEmbedding(row.id, embedding);
+  return { filename, contentHash };
+}
+
+async function updateJobProgress(jobId: string, data: {
+  totalFiles?: number;
+  processedFiles?: number;
+  failedFiles?: number;
+  status?: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+  errorMessage?: string | null;
+  finishedAt?: Date | null;
+  commitSha?: string | null;
+}) {
+  await db.indexingJob.update({
+    where: { id: jobId },
+    data,
+  });
+}
+
+export async function runIndexingJob(
+  jobId: string,
   projectId: string,
   githubUrl: string,
+  branch: string,
   githubToken?: string,
-) => {
-  // Drop stale/noise rows from earlier broken indexes so RAG isn't polluted
-  const deleted = await db.sourceCodeEmbeddings.deleteMany({
-    where: { projectId },
+) {
+  await updateJobProgress(jobId, {
+    status: "PROCESSING",
+    errorMessage: null,
   });
-  console.log(
-    `Cleared ${deleted.count} old embeddings for project ${projectId}`,
-  );
 
-  const docs = await loadGithubRepo(githubUrl, githubToken);
-  const filesToIndex = pickFilesToIndex(docs);
+  try {
+    const [docs, commitSha, existingRows] = await Promise.all([
+      loadGithubRepo(githubUrl, branch, githubToken),
+      getBranchHeadSha(githubUrl, branch, githubToken),
+      db.sourceCodeEmbeddings.findMany({
+        where: { projectId, branch },
+        select: {
+          id: true,
+          filename: true,
+          contentHash: true,
+        },
+      }),
+    ]);
 
-  if (!filesToIndex.length) {
-    console.warn(
-      `No source files selected for project ${projectId} (${docs.length} docs loaded). Check repo contents / ignore rules.`,
+    const filesToIndex = pickFilesToIndex(docs);
+    await updateJobProgress(jobId, {
+      totalFiles: filesToIndex.length,
+      commitSha,
+    });
+
+    const existingByFilename = new Map(
+      existingRows.map((row) => [row.filename, row]),
     );
-    return;
-  }
+    const selectedFilenames = new Set(
+      filesToIndex.map((doc) => String(doc.metadata.source ?? "unknown")),
+    );
 
-  console.log(
-    `Indexing ${filesToIndex.length} of ${docs.length} files for project ${projectId}`,
-  );
+    let processedFiles = 0;
+    let failedFiles = 0;
 
-  for (let index = 0; index < filesToIndex.length; index++) {
-    const doc = filesToIndex[index]!;
-    const filename = String(doc.metadata.source ?? "unknown");
-    console.log(`processing ${index + 1} of ${filesToIndex.length}: ${filename}`);
+    for (let index = 0; index < filesToIndex.length; index++) {
+      const doc = filesToIndex[index]!;
+      const filename = String(doc.metadata.source ?? "unknown");
+      const sourcecode = String(doc.pageContent ?? "");
+      const contentHash = hashContent(sourcecode);
+      const existing = existingByFilename.get(filename);
 
-    let createdId: string | null = null;
-    try {
-      const summary = await summariseCode(doc);
-      const embedding = await embedForRetrieval(
-        filename,
-        summary,
-        doc.pageContent,
-      );
+      try {
+        if (existing?.contentHash !== contentHash) {
+          await processFileForIndexing({
+            projectId,
+            branch,
+            doc,
+          });
+        }
+      } catch (error) {
+        failedFiles++;
+        console.error(`Skipping ${filename} due to indexing error:`, error);
+      }
 
-      const sourceCodeEmbedding = await db.sourceCodeEmbeddings.create({
-        data: {
-          summary,
-          sourcecode: JSON.parse(JSON.stringify(doc.pageContent)),
-          filename,
+      processedFiles++;
+      await updateJobProgress(jobId, {
+        processedFiles,
+        failedFiles,
+      });
+
+      if (index < filesToIndex.length - 1) {
+        await sleep(DELAY_BETWEEN_FILES_MS);
+      }
+    }
+
+    const removedFiles = existingRows
+      .filter((row) => !selectedFilenames.has(row.filename))
+      .map((row) => row.filename);
+
+    if (removedFiles.length) {
+      await db.sourceCodeEmbeddings.deleteMany({
+        where: {
           projectId,
+          branch,
+          filename: { in: removedFiles },
         },
       });
-      createdId = sourceCodeEmbedding.id;
-
-      await saveSummaryEmbedding(sourceCodeEmbedding.id, embedding);
-    } catch (error) {
-      if (createdId) {
-        await db.sourceCodeEmbeddings
-          .delete({ where: { id: createdId } })
-          .catch(() => undefined);
-      }
-      console.error(`Skipping ${filename} due to indexing error:`, error);
     }
 
-    if (index < filesToIndex.length - 1) {
-      await sleep(DELAY_BETWEEN_FILES_MS);
-    }
+    await db.project.update({
+      where: { id: projectId },
+      data: {
+        activeBranch: branch,
+        lastIndexedAt: new Date(),
+        lastIndexedCommitSha: commitSha,
+      },
+    });
+
+    await backfillNullEmbeddings(projectId);
+
+    await updateJobProgress(jobId, {
+      status: failedFiles > 0 ? "FAILED" : "COMPLETED",
+      failedFiles,
+      processedFiles,
+      finishedAt: new Date(),
+      errorMessage:
+        failedFiles > 0
+          ? `${failedFiles} file(s) failed during indexing`
+          : null,
+      commitSha,
+    });
+  } catch (error) {
+    console.error("Indexing job failed:", error);
+    await updateJobProgress(jobId, {
+      status: "FAILED",
+      finishedAt: new Date(),
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
   }
+}
 
-  await backfillNullEmbeddings(projectId);
-};
+export async function startIndexingJob(params: {
+  projectId: string;
+  githubUrl: string;
+  branch?: string;
+  githubToken?: string;
+  triggeredByUserId?: string;
+}) {
+  const defaultBranch = await getDefaultBranch(
+    params.githubUrl,
+    params.githubToken,
+  );
+  const branch = params.branch || defaultBranch;
+
+  await db.project.update({
+    where: { id: params.projectId },
+    data: {
+      defaultBranch,
+      activeBranch: branch,
+    },
+  });
+
+  const job = await db.indexingJob.create({
+    data: {
+      projectId: params.projectId,
+      branch,
+      triggeredByUserId: params.triggeredByUserId,
+      status: "QUEUED",
+    },
+  });
+
+  void runIndexingJob(
+    job.id,
+    params.projectId,
+    params.githubUrl,
+    branch,
+    params.githubToken,
+  );
+
+  return job;
+}
+
+export async function getLatestIndexingJob(projectId: string) {
+  return await db.indexingJob.findFirst({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+  });
+}
