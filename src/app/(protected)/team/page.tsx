@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import {
   Check,
   Copy,
@@ -293,7 +294,7 @@ export default function TeamPage() {
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     {member.user.imageUrl ? (
-                      <img
+                      <Image
                         src={member.user.imageUrl}
                         alt=""
                         className="size-9 rounded-full"

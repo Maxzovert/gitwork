@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -113,21 +114,23 @@ const CommitLog = () => {
               </div>
 
               {commit.commitAuthorAvatar ? (
-                <img
+                <Image
                   src={commit.commitAuthorAvatar}
                   alt=""
                   width={32}
                   height={32}
+                  unoptimized
                   className="relative mt-3 size-8 max-h-8 max-w-8 shrink-0 rounded-full bg-[#f4f4f4] object-cover"
                 />
               ) : (
-                <img
+                <Image
                   src={`data:image/svg+xml;utf8,${encodeURIComponent(
                     minidenticon(commit.commitAuthorName),
                   )}`}
                   alt=""
                   width={32}
                   height={32}
+                  unoptimized
                   className="relative mt-3 size-8 max-h-8 max-w-8 shrink-0 rounded-full bg-[#f4f4f4] object-cover"
                 />
               )}

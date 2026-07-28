@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { MessageSquareText } from "lucide-react";
 
 import useProjects from "@/hooks/use-projects";
@@ -92,7 +93,7 @@ const QAPage = () => {
                   className="border-border bg-card hover:border-primary/35 group flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all hover:shadow-md"
                 >
                   {q.user.imageUrl ? (
-                    <img
+                    <Image
                       src={q.user.imageUrl}
                       alt=""
                       className="size-9 rounded-full ring-2 ring-background"
