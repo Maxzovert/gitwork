@@ -15,7 +15,7 @@ export default clerkMiddleware(async (auth, req) => {
 
   // Already signed in: never stay on auth pages
   if (userId && isAuthRoute(req)) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL("/sync-user", req.url));
   }
 
   if (!isPublicRoute(req)) {

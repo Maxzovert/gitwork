@@ -24,16 +24,25 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import React, { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import React, { useEffect } from "react";
 import { GitworkLogo } from "@/components/gitwork-logo";
-import { CreateProjectDialog } from "@/components/create-project-dialog";
 
 function Appsidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { open } = useSidebar();
-  const { projects, projectId, setProjectId } = useProjects();
-  const [createOpen, setCreateOpen] = useState(false);
+  const { projects, projectId, setProjectId, isFetched, isFetching } =
+    useProjects();
+
+  useEffect(() => {
+    // Wait until the list has settled so a post-create navigation isn't
+    // bounced back to /create while getProjects is still refetching.
+    if (!isFetched || isFetching) return;
+    if (!projects?.length && pathname !== "/create") {
+      router.replace("/create");
+    }
+  }, [isFetched, isFetching, pathname, projects, router]);
 
   const items = [
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -146,14 +155,16 @@ function Appsidebar() {
 
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    asChild
                     tooltip="Create Project"
-                    onClick={() => setCreateOpen(true)}
                     className="mt-1 h-10 cursor-pointer rounded-xl border border-dashed border-[#d1cdc7] bg-transparent px-3 text-[#141413] hover:bg-white hover:text-[#141413]"
                   >
-                    <Plus />
-                    <span className="font-medium tracking-[-0.02em]">
-                      New project
-                    </span>
+                    <Link href="/create">
+                      <Plus />
+                      <span className="font-medium tracking-[-0.02em]">
+                        New project
+                      </span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
@@ -163,7 +174,6 @@ function Appsidebar() {
         <SidebarRail className="hover:after:bg-[#d1cdc7]" />
       </Sidebar>
 
-      <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 }

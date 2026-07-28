@@ -24,8 +24,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider
-      signInFallbackRedirectUrl="/dashboard"
-      signUpFallbackRedirectUrl="/dashboard"
+      signInFallbackRedirectUrl="/sync-user"
+      signUpFallbackRedirectUrl="/sync-user"
       afterSignOutUrl="/"
     >
       <html lang="en" className={sofia.variable}>

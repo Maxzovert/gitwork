@@ -7,8 +7,8 @@ export default function Page() {
   return (
     <AuthShell subtitle="Create your workspace">
       <SignUp
-        forceRedirectUrl="/dashboard"
-        fallbackRedirectUrl="/dashboard"
+        forceRedirectUrl="/sync-user"
+        fallbackRedirectUrl="/sync-user"
         signInUrl="/sign-in"
         appearance={clerkAppearance}
       />

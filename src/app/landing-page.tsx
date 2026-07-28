@@ -62,6 +62,27 @@ const storyCards = [
   },
 ];
 
+const newFeatures = [
+  {
+    id: "onboarding",
+    chip: "New",
+    title: "Guided project onboarding",
+    body: "Create a project with a step-by-step flow for repository setup, token permissions, branch selection, and first indexing.",
+  },
+  {
+    id: "digests",
+    chip: "New",
+    title: "PR digests with risk callouts",
+    body: "Generate a live summary of open pull requests, weekly changes, and high-risk review areas without opening every tab in GitHub.",
+  },
+  {
+    id: "team",
+    chip: "New",
+    title: "Invite your team into one workspace",
+    body: "Share project access with invite links so collaborators can use the same code Q&A, meeting history, and repository context.",
+  },
+];
+
 const audience = [
   {
     t: "Founders shipping alone",
@@ -405,7 +426,8 @@ export default function LandingPage() {
           <div data-hero-el className="max-w-md">
             <p className="text-base font-[450] leading-[1.4] text-[#141413]">
               Ask the codebase. Capture meetings. Read commit history in plain
-              language. All tied to the project you are shipping.
+              language. Now with guided project setup, PR digests, and shared
+              team workspaces tied to the repo you are shipping.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <InkButton href="/sign-up">Get started</InkButton>
@@ -442,6 +464,51 @@ export default function LandingPage() {
               </Link>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* New features */}
+      <section
+        data-reveal-section
+        className="mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12"
+      >
+        <div className="mx-auto max-w-3xl text-center">
+          <Eyebrow>
+            <span data-reveal>Latest additions</span>
+          </Eyebrow>
+          <h2
+            data-reveal
+            className="font-display mt-4 text-[32px] leading-[1.1] tracking-[-0.02em] sm:text-[40px]"
+          >
+            What&apos;s new in Gitwork
+          </h2>
+          <p
+            data-reveal
+            className="mx-auto mt-5 max-w-2xl text-base font-[450] leading-[1.5] text-[#696969]"
+          >
+            A cleaner setup flow, better review visibility, and shared project
+            access for the people working in the same repository.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-6 md:grid-cols-3">
+          {newFeatures.map((feature) => (
+            <article
+              key={feature.id}
+              data-reveal
+              className="rounded-[28px] border border-[#d1cdc7] bg-white p-7 text-left shadow-[rgba(0,0,0,0.04)_0px_8px_24px]"
+            >
+              <span className="inline-flex rounded-full bg-[#f3f0ee] px-4 py-2 text-sm font-medium tracking-[-0.02em] text-[#141413]">
+                {feature.chip}
+              </span>
+              <h3 className="font-display mt-5 text-[28px] leading-[1.15] tracking-[-0.02em] text-[#141413]">
+                {feature.title}
+              </h3>
+              <p className="mt-3 text-base font-[450] leading-[1.5] text-[#696969]">
+                {feature.body}
+              </p>
+            </article>
+          ))}
         </div>
       </section>
 

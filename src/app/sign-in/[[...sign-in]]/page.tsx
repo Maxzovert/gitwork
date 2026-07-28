@@ -7,8 +7,8 @@ export default function Page() {
   return (
     <AuthShell>
       <SignIn
-        forceRedirectUrl="/dashboard"
-        fallbackRedirectUrl="/dashboard"
+        forceRedirectUrl="/sync-user"
+        fallbackRedirectUrl="/sync-user"
         signUpUrl="/sign-up"
         appearance={clerkAppearance}
       />

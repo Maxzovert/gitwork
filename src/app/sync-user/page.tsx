@@ -2,15 +2,26 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { ensureDbUser } from "@/lib/ensure-user";
+import { db } from "@/server/db";
 
-/** Legacy post-auth route — always continues to the dashboard. */
 const SyncUser = async () => {
   const { userId } = await auth();
   if (!userId) {
     redirect("/sign-in");
   }
+
   await ensureDbUser();
-  redirect("/dashboard");
+
+  const projectCount = await db.userToProject.count({
+    where: {
+      userId,
+      project: {
+        deletedAt: null,
+      },
+    },
+  });
+
+  redirect(projectCount > 0 ? "/dashboard" : "/create");
 };
 
 export default SyncUser;
