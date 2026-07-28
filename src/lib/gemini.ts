@@ -108,6 +108,154 @@ ${diff}
   }
 };
 
+type PullRequestSummaryInput = {
+  title: string;
+  body: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  filenames: string[];
+};
+
+type PullRequestSummaryResult = {
+  summary: string;
+  reviewerFocus: string[];
+};
+
+type PullRequestDigestOverviewInput = {
+  repo: string;
+  openPullRequests: Array<{
+    title: string;
+    author: string;
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    riskAreas: string[];
+  }>;
+  recentActivity: {
+    opened: number;
+    merged: number;
+    active: number;
+  };
+};
+
+type PullRequestDigestOverviewResult = {
+  executiveSummary: string;
+  themes: string[];
+};
+
+function parseJsonObject<T>(raw: string): T | null {
+  const trimmed = raw.trim();
+  const json = trimmed
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "");
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function summarisePullRequest(
+  input: PullRequestSummaryInput,
+): Promise<PullRequestSummaryResult> {
+  try {
+    const response = await withRetry(() =>
+      model.generateContent([
+        `You are reviewing a GitHub pull request.
+Return valid JSON with this exact shape:
+{
+  "summary": "2-4 sentence summary",
+  "reviewerFocus": ["short checklist item", "short checklist item"]
+}
+
+Keep reviewerFocus to 2-4 concise bullets.
+Focus on reviewer attention points, not generic praise.
+
+Pull request:
+Title: ${input.title}
+Body: ${input.body || "(empty)"}
+Additions: ${input.additions}
+Deletions: ${input.deletions}
+Changed files: ${input.changedFiles}
+Files:
+${input.filenames.map((name) => `- ${name}`).join("\n")}
+`,
+      ]),
+    );
+
+    const parsed = parseJsonObject<PullRequestSummaryResult>(
+      response.response.text(),
+    );
+    if (parsed?.summary) {
+      return {
+        summary: parsed.summary,
+        reviewerFocus: Array.isArray(parsed.reviewerFocus)
+          ? parsed.reviewerFocus.slice(0, 4)
+          : [],
+      };
+    }
+  } catch (error) {
+    console.error("Failed to summarise PR:", error);
+  }
+
+  return {
+    summary:
+      "Summary unavailable right now. Review the changed files and PR description directly on GitHub.",
+    reviewerFocus: [],
+  };
+}
+
+export async function summarisePullRequestDigestOverview(
+  input: PullRequestDigestOverviewInput,
+): Promise<PullRequestDigestOverviewResult> {
+  try {
+    const response = await withRetry(() =>
+      model.generateContent([
+        `You are generating a weekly engineering digest for a repository.
+Return valid JSON with this exact shape:
+{
+  "executiveSummary": "3-5 sentence summary",
+  "themes": ["short theme", "short theme", "short theme"]
+}
+
+Be concrete and prioritize risk, review load, and major themes.
+
+Repository: ${input.repo}
+Recent activity: opened=${input.recentActivity.opened}, merged=${input.recentActivity.merged}, active=${input.recentActivity.active}
+
+Open PRs:
+${input.openPullRequests
+  .map(
+    (pr) =>
+      `- ${pr.title} by ${pr.author} (+${pr.additions}/-${pr.deletions}, ${pr.changedFiles} files, risks: ${pr.riskAreas.join(", ") || "none"})`,
+  )
+  .join("\n")}
+`,
+      ]),
+    );
+
+    const parsed = parseJsonObject<PullRequestDigestOverviewResult>(
+      response.response.text(),
+    );
+    if (parsed?.executiveSummary) {
+      return {
+        executiveSummary: parsed.executiveSummary,
+        themes: Array.isArray(parsed.themes) ? parsed.themes.slice(0, 5) : [],
+      };
+    }
+  } catch (error) {
+    console.error("Failed to summarise PR digest overview:", error);
+  }
+
+  return {
+    executiveSummary:
+      "This digest is available, but the AI overview could not be generated right now.",
+    themes: [],
+  };
+}
+
 export async function summariseCode(doc: Document) {
   console.log("getting summary for", doc.metadata.source);
   const code = doc.pageContent.slice(0, 10000);

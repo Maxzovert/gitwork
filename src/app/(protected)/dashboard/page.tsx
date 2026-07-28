@@ -104,7 +104,7 @@ const Dashboard = () => {
           <h2 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
             Recent commits
           </h2>
-          <span className="text-xs text-[#696969]">AI summarized</span>
+          <span className="text-xs text-[#696969]">Live via GitHub webhooks</span>
         </div>
         <CommitLog />
       </section>

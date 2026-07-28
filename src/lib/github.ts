@@ -1,81 +1,105 @@
 import { db } from "@/server/db";
 import { Octokit } from "octokit";
 import { aiSummariesCommits } from "./gemini";
+import { parseGithubUrl } from "./github-url";
+import type { GithubPushCommit } from "./github-webhook";
 
 export const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-type Response = {
+export type CommitInput = {
   commitHash: string;
   commitMessage: string;
   commitAuthorName: string;
   commitAuthorAvatar: string;
-  commitDate: string;
+  commitDate: string | Date;
 };
 
 export const getCommitHashes = async (
   githubUrl: string,
-): Promise<Response[]> => {
-  let [owner, repo] = githubUrl.split("/").slice(-2);
-  repo = repo?.replace(/\.git$/, "").replace(/\/$/, "");
-  if (!owner || !repo) {
-    throw new Error("Invalid github url");
-  }
+): Promise<CommitInput[]> => {
+  const { owner, repo } = parseGithubUrl(githubUrl);
   const { data } = await octokit.rest.repos.listCommits({
     owner,
     repo,
+    per_page: 15,
   });
   const sortedCommits = data.sort(
-    (a: any, b: any) =>
-      new Date(b.commit.author.date).getTime() -
-      new Date(a.commit.author.date).getTime(),
-  ) as any[];
-  return sortedCommits.slice(0, 15).map((commit: any) => ({
-    commitHash: commit.sha as string,
+    (a, b) =>
+      new Date(b.commit.author?.date ?? 0).getTime() -
+      new Date(a.commit.author?.date ?? 0).getTime(),
+  );
+  return sortedCommits.slice(0, 15).map((commit) => ({
+    commitHash: commit.sha,
     commitMessage: commit.commit.message ?? "",
-    commitAuthorName: commit.commit?.author?.name ?? "",
-    commitAuthorAvatar: commit?.author?.avatar_url ?? "",
-    commitDate: commit.commit?.author.date ?? "",
+    commitAuthorName: commit.commit.author?.name ?? "",
+    commitAuthorAvatar: commit.author?.avatar_url ?? "",
+    commitDate: commit.commit.author?.date ?? new Date().toISOString(),
   }));
 };
 
-export const pullCommits = async (projectId: string) => {
+export async function ingestCommits(
+  projectId: string,
+  commits: CommitInput[],
+) {
   const { githubUrl } = await fetchProjectGithubUrl(projectId);
-  const commitHashes = await getCommitHashes(githubUrl);
   const unprocessedCommits = await filterUnprocessedCommits(
     projectId,
-    commitHashes,
+    commits,
   );
   if (unprocessedCommits.length === 0) {
     return { count: 0, message: "No new commits to process" };
   }
 
-  // Save commits immediately so the UI can render without waiting on Gemini
-  const commits = await db.commit.createMany({
+  const result = await db.commit.createMany({
     data: unprocessedCommits.map((commit) => ({
       projectId,
       commitHash: commit.commitHash,
       commitMessage: commit.commitMessage,
       commitAuthorName: commit.commitAuthorName,
       commitAuthorAvatar: commit.commitAuthorAvatar,
-      commitDate: commit.commitDate,
+      commitDate: new Date(commit.commitDate),
       summary: commit.commitMessage.split("\n")[0] ?? commit.commitMessage,
     })),
+    skipDuplicates: true,
   });
 
-  // Best-effort AI summaries in the background (won't block rendering)
   void enhanceCommitSummaries(projectId, githubUrl, unprocessedCommits).catch(
     (error) => console.error("Failed to enhance commit summaries:", error),
   );
 
-  return commits;
+  return result;
+}
+
+export function mapPushCommits(commits: GithubPushCommit[]): CommitInput[] {
+  return commits.map((commit) => ({
+    commitHash: commit.id,
+    commitMessage: commit.message,
+    commitAuthorName: commit.author.name,
+    commitAuthorAvatar: "",
+    commitDate: commit.timestamp,
+  }));
+}
+
+export async function ingestPushCommits(
+  projectId: string,
+  commits: GithubPushCommit[],
+) {
+  return ingestCommits(projectId, mapPushCommits(commits));
+}
+
+/** One-time backfill when a project is created. */
+export const pullCommits = async (projectId: string) => {
+  const { githubUrl } = await fetchProjectGithubUrl(projectId);
+  const commitHashes = await getCommitHashes(githubUrl);
+  return ingestCommits(projectId, commitHashes);
 };
 
 async function enhanceCommitSummaries(
   projectId: string,
   githubUrl: string,
-  commits: Response[],
+  commits: CommitInput[],
 ) {
   for (const commit of commits) {
     try {
@@ -103,12 +127,7 @@ async function enhanceCommitSummaries(
 
 export async function summariesCommits(githubUrl: string, commitHash: string) {
   try {
-    let [owner, repo] = githubUrl.split("/").slice(-2);
-    repo = repo?.replace(/\.git$/, "").replace(/\/$/, "");
-
-    if (!owner || !repo) {
-      throw new Error("Invalid github url");
-    }
+    const { owner, repo } = parseGithubUrl(githubUrl);
 
     const { data } = await octokit.rest.repos.getCommit({
       owner,
@@ -126,7 +145,7 @@ export async function summariesCommits(githubUrl: string, commitHash: string) {
 
     if (!diff) {
       console.error(`No diff found for commit ${commitHash}`);
-      return "No changes found in this commit";
+      return "No meaningful changes detected";
     }
 
     const summary = await aiSummariesCommits(diff);
@@ -136,7 +155,6 @@ export async function summariesCommits(githubUrl: string, commitHash: string) {
       return "No meaningful changes detected";
     }
 
-    console.log(`Generated summary for ${commitHash}:`, summary);
     return summary;
   } catch (error) {
     console.error(`Error processing commit ${commitHash}:`, error);
@@ -162,17 +180,16 @@ const fetchProjectGithubUrl = async (projectId: string) => {
 
 const filterUnprocessedCommits = async (
   projectId: string,
-  commitHashes: Response[],
+  commitHashes: CommitInput[],
 ) => {
   const processedCommits = await db.commit.findMany({
     where: {
       projectId,
     },
+    select: {
+      commitHash: true,
+    },
   });
-  return commitHashes.filter(
-    (commit) =>
-      !processedCommits.some(
-        (processedCommit) => processedCommit.commitHash === commit.commitHash,
-      ),
-  );
+  const processed = new Set(processedCommits.map((commit) => commit.commitHash));
+  return commitHashes.filter((commit) => !processed.has(commit.commitHash));
 };

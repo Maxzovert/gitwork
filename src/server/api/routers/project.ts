@@ -4,6 +4,12 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { pullCommits } from "@/lib/github";
 import { indexGithubRepo } from "@/lib/github-loader";
+import { buildPullRequestDigest } from "@/lib/github-prs";
+import {
+  deleteProjectWebhook,
+  ensureProjectWebhook,
+  registerProjectWebhook,
+} from "@/lib/github-webhook";
 import {
   countOwners,
   isActiveInvite,
@@ -44,6 +50,9 @@ export const projectRouter = createTRPCRouter({
       );
       void pullCommits(project.id).catch((error) =>
         console.error("Background commit pull failed:", error),
+      );
+      void registerProjectWebhook(project.id, input.githubToken).catch(
+        (error) => console.error("Background webhook registration failed:", error),
       );
 
       return project;
@@ -420,6 +429,10 @@ export const projectRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       await requireProjectOwner(ctx.db, input.projectId, ctx.user.userId!);
 
+      void deleteProjectWebhook(input.projectId).catch((error) =>
+        console.error("Background webhook deletion failed:", error),
+      );
+
       return await ctx.db.project.update({
         where: { id: input.projectId },
         data: { deletedAt: new Date() },
@@ -434,7 +447,11 @@ export const projectRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       await requireProjectMember(ctx.db, input.projectId, ctx.user.userId!);
-      await pullCommits(input.projectId).catch(console.error);
+
+      void ensureProjectWebhook(input.projectId).catch((error) =>
+        console.error("Background webhook setup failed:", error),
+      );
+
       return await ctx.db.commit.findMany({
         where: {
           projectId: input.projectId,
@@ -442,7 +459,42 @@ export const projectRouter = createTRPCRouter({
         orderBy: {
           commitDate: "desc",
         },
+        take: 50,
       });
+    }),
+
+  getPullRequestDigest: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+
+      return await buildPullRequestDigest(
+        input.projectId,
+        membership.project.githubUrl,
+      );
+    }),
+
+  syncCommits: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await requireProjectMember(ctx.db, input.projectId, ctx.user.userId!);
+      return await pullCommits(input.projectId);
+    }),
+
+  setupCommitWebhook: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        githubToken: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requireProjectOwner(ctx.db, input.projectId, ctx.user.userId!);
+      return await registerProjectWebhook(input.projectId, input.githubToken);
     }),
 
   saveAnswer: protectedProcedure

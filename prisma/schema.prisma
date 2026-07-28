@@ -43,6 +43,9 @@ model Project {
     name      String
     githubUrl String
 
+    webhookSecret    String?
+    githubWebhookId  Int?
+
     deletedAt DateTime?
 
     userToProjects       userToProject[]
@@ -130,6 +133,8 @@ model Commit {
     commitDate         DateTime
     // Ai generated Summary
     summary            String
+
+    @@unique([projectId, commitHash])
 }
 
 model Meeting {
