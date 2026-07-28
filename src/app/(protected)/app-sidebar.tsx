@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import useProjects from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
-import { Bot, LayoutDashboard, Plus, Presentation } from "lucide-react";
+import { Bot, LayoutDashboard, Plus, Presentation, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useState } from "react";
@@ -32,6 +32,7 @@ function Appsidebar() {
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
     { title: "Q&A", url: "/qa", icon: Bot },
     { title: "Meetings", url: "/meetings", icon: Presentation },
+    { title: "Team", url: "/team", icon: Users },
   ];
 
   return (
@@ -64,7 +65,10 @@ function Appsidebar() {
             <SidebarGroupContent>
               <SidebarMenu className="gap-1">
                 {items.map((item) => {
-                  const isActive = pathname === item.url;
+                  const isActive =
+                    pathname === item.url ||
+                    (item.url !== "/dashboard" &&
+                      pathname.startsWith(`${item.url}/`));
                   return (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton

@@ -12,9 +12,14 @@ import { api } from "@/trpc/react";
 import { toast } from "sonner";
 
 const Dashboard = () => {
-  const { project, projects, setProjectId } = useProjects();
+  const { project, projects, projectId, setProjectId } = useProjects();
   const utils = api.useUtils();
   const deleteProject = api.project.deleteProject.useMutation();
+  const { data: membership } = api.project.getMyMembership.useQuery(
+    { projectId: projectId ?? "" },
+    { enabled: Boolean(projectId) },
+  );
+  const isOwner = membership?.role === "OWNER";
 
   const handleDelete = () => {
     if (!project) return;
@@ -39,8 +44,8 @@ const Dashboard = () => {
           void utils.project.getMeetings.invalidate();
           void utils.project.getCommits.invalidate();
         },
-        onError: () => {
-          toast.error("Failed to delete project");
+        onError: (err) => {
+          toast.error(err.message || "Failed to delete project");
         },
       },
     );
@@ -52,7 +57,7 @@ const Dashboard = () => {
         title={project?.name ?? "Dashboard"}
         description="Ask the codebase, upload meetings, and scan AI commit summaries."
         actions={
-          project ? (
+          project && isOwner ? (
             <Button
               variant="outline"
               size="sm"

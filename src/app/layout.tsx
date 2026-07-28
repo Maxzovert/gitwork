@@ -24,8 +24,6 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider
-      signInForceRedirectUrl="/dashboard"
-      signUpForceRedirectUrl="/dashboard"
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
       afterSignOutUrl="/"

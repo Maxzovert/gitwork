@@ -19,7 +19,26 @@ export async function POST(req: NextRequest) {
   }
   try {
     const body = await req.json();
-    const { meetingUrl, meetingId } = bodyParser.parse(body);
+    const { meetingUrl, meetingId, projectId } = bodyParser.parse(body);
+
+    const membership = await db.userToProject.findFirst({
+      where: {
+        userId,
+        projectId,
+        project: { deletedAt: null },
+      },
+    });
+    if (!membership) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const meeting = await db.meeting.findFirst({
+      where: { id: meetingId, projectId },
+    });
+    if (!meeting) {
+      return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
+    }
+
     const { summaries } = await processMeeting(meetingUrl);
     await db.issue.createMany({
       data: summaries.map((summary) => ({

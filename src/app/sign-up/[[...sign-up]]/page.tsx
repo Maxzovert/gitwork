@@ -5,7 +5,7 @@ import { clerkAppearance } from "@/lib/clerk-appearance";
 
 export default function Page() {
   return (
-    <AuthShell>
+    <AuthShell subtitle="Create your workspace">
       <SignUp
         forceRedirectUrl="/dashboard"
         fallbackRedirectUrl="/dashboard"

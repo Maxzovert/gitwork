@@ -59,7 +59,7 @@ export function GitworkLogo({
         <span
           className="font-display tracking-[-0.02em]"
           style={{
-            fontSize: Math.round(size * 0.55),
+            fontSize: Math.round(size * (size >= 48 ? 0.62 : 0.55)),
             color: wordmark,
             fontWeight: 500,
             lineHeight: 1,

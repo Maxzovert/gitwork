@@ -587,6 +587,12 @@ export default function LandingPage() {
         data-reveal-section
         className="scroll-mt-28 relative mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
+        <p
+          aria-hidden
+          className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+        >
+          Story
+        </p>
         <Eyebrow>
           <span data-reveal>The story</span>
         </Eyebrow>
@@ -645,25 +651,15 @@ export default function LandingPage() {
         data-steps
         className="scroll-mt-28 relative overflow-hidden bg-[#fcfbfa] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
-        {/* Decorative: faint orbit only in empty top-right of steps */}
-        <svg
-          aria-hidden
-          className="pointer-events-none absolute top-16 -right-10 hidden h-56 w-72 text-[#f37338]/35 lg:block"
-          viewBox="0 0 288 224"
-          fill="none"
-        >
-          <path
-            d="M40 180 C 100 40, 220 20, 270 100"
-            stroke="currentColor"
-            strokeWidth="1.25"
-            strokeLinecap="round"
-          />
-          <circle cx="270" cy="100" r="4" fill="currentColor" opacity="0.5" />
-        </svg>
-
         <div className="relative z-10 mx-auto max-w-[1280px]">
+          <p
+            aria-hidden
+            className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+          >
+            How it works
+          </p>
           <Eyebrow>
-            <span data-step>How it works</span>
+            <span data-step>Get started</span>
           </Eyebrow>
           <h2
             data-step
@@ -694,8 +690,14 @@ export default function LandingPage() {
         data-audience
         className="mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
+        <p
+          aria-hidden
+          className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+        >
+          Who it helps
+        </p>
         <Eyebrow>
-          <span>Who it helps</span>
+          <span>Audience</span>
         </Eyebrow>
         <h2 className="font-display mt-4 max-w-2xl text-[36px] leading-[44px] tracking-[-0.02em]">
           Small teams and solo builders who live in GitHub

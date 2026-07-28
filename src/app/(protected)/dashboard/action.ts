@@ -1,4 +1,6 @@
 "use server";
+
+import { auth } from "@clerk/nextjs/server";
 import { streamText } from "ai";
 import { createStreamableValue } from "@ai-sdk/rsc";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -167,6 +169,22 @@ async function searchSimilarFiles(
 }
 
 export async function askQuestion(question: string, projectId: string) {
+  const { userId } = await auth();
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const membership = await db.userToProject.findFirst({
+    where: {
+      userId,
+      projectId,
+      project: { deletedAt: null },
+    },
+  });
+  if (!membership) {
+    throw new Error("You are not a member of this project");
+  }
+
   const stream = createStreamableValue<string>("");
 
   const queryVector = await generateEmbeddings(question);

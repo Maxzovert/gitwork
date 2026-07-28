@@ -62,7 +62,7 @@ const QAPage = () => {
     <div className="space-y-8">
       <PageHeader
         title="Q&A"
-        description="Interrogate the repo and keep the answers that matter."
+        description="Ask the codebase. Saved answers are shared with everyone on the project."
       />
 
       <AskQuestionCard />

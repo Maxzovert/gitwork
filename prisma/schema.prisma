@@ -2,14 +2,19 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-    provider = "prisma-client-js"
+    provider        = "prisma-client-js"
     previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+    provider   = "postgresql"
+    url        = env("DATABASE_URL")
     extensions = [vector]
+}
+
+enum ProjectRole {
+    OWNER
+    MEMBER
 }
 
 model User {
@@ -24,9 +29,10 @@ model User {
     emailAdress String @unique
     credits     Int    @default(150)
 
-    userToProjects userToProject[]
-
-    questionsAsked Question[]
+    userToProjects  userToProject[]
+    questionsAsked  Question[]
+    invitesCreated  ProjectInvite[]
+    meetingsCreated Meeting[]
 }
 
 model Project {
@@ -39,13 +45,12 @@ model Project {
 
     deletedAt DateTime?
 
-    userToProjects userToProject[]
-
+    userToProjects       userToProject[]
+    invites              ProjectInvite[]
     commit               Commit[]
     sourceCodeEmbeddings SourceCodeEmbeddings[]
-
-    savedQuestions Question[]
-    meetings Meeting[]
+    savedQuestions       Question[]
+    meetings             Meeting[]
 }
 
 model userToProject {
@@ -55,6 +60,7 @@ model userToProject {
 
     userId    String
     projectId String
+    role      ProjectRole @default(OWNER)
 
     user    User    @relation(fields: [userId], references: [id])
     project Project @relation(fields: [projectId], references: [id])
@@ -62,13 +68,31 @@ model userToProject {
     @@unique([userId, projectId])
 }
 
-model SourceCodeEmbeddings {
+model ProjectInvite {
     id        String   @id @default(cuid())
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 
-    summaryEmbeddings  Unsupported("vector(768)")?
-    sourcecode String
-    filename String
-    summary String
+    token     String      @unique
+    role      ProjectRole @default(MEMBER)
+    expiresAt DateTime?
+    revokedAt DateTime?
+
+    projectId       String
+    project         Project @relation(fields: [projectId], references: [id])
+    createdByUserId String
+    createdBy       User    @relation(fields: [createdByUserId], references: [id])
+
+    @@index([projectId])
+}
+
+model SourceCodeEmbeddings {
+    id String @id @default(cuid())
+
+    summaryEmbeddings Unsupported("vector(768)")?
+    sourcecode        String
+    filename          String
+    summary           String
 
     projectId String
     project   Project @relation(fields: [projectId], references: [id])
@@ -80,7 +104,7 @@ model Question {
     updatedAt DateTime @updatedAt
 
     question String
-    answer String
+    answer   String
 
     fileReference Json?
 
@@ -114,9 +138,12 @@ model Meeting {
     updatedAt DateTime @updatedAt
 
     meetingUrl String
-    name String
-    projectId String
-    project Project @relation(fields: [projectId], references: [id])
+    name       String
+    projectId  String
+    project    Project @relation(fields: [projectId], references: [id])
+
+    createdByUserId String?
+    createdBy       User?   @relation(fields: [createdByUserId], references: [id])
 
     status MeetingStatus @default(PROCESSING)
 
@@ -128,14 +155,14 @@ model Issue {
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 
-    start String
-    end String
-    gist String
+    start    String
+    end      String
+    gist     String
     headline String
-    summary String
+    summary  String
 
     meetingId String
-    meeting Meeting @relation(fields: [meetingId], references: [id])
+    meeting   Meeting @relation(fields: [meetingId], references: [id])
 }
 
 enum MeetingStatus {

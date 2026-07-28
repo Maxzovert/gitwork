@@ -29,7 +29,7 @@ const MeetingsPage = () => {
     <div className="space-y-8">
       <PageHeader
         title="Meetings"
-        description="Upload recordings and review AI-extracted issues."
+        description="Upload recordings and review AI-extracted issues. History is shared with your team."
       />
 
       <MeetingCard className="col-span-full max-w-xl" />
@@ -76,6 +76,19 @@ const MeetingsPage = () => {
                     <span className="truncate">
                       {meeting.issues.length} issues
                     </span>
+                    {meeting.createdBy ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="truncate">
+                          {[
+                            meeting.createdBy.firstName,
+                            meeting.createdBy.lastName,
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || "Teammate"}
+                        </span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
