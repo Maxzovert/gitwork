@@ -40,3 +40,28 @@ Copy `.env.example` → `.env`.
 - **Required:** Clerk keys, `DATABASE_URL`, `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, etc.
 - **`GITHUB_TOKEN`:** optional fallback for local/dev only. Not required in production if every user connects GitHub.
 - AI keys stay server-side (not per-user).
+
+## Deploy (GitHub Actions → Vercel prebuilt)
+
+Builds run on **GitHub Actions** (more RAM), then only the output is uploaded to Vercel. This avoids Vercel builder OOM.
+
+`vercel.json` sets `"git.deploymentEnabled": false` so Vercel does **not** build from Git itself.
+
+### One-time setup
+
+1. Create a Vercel token: [vercel.com/account/tokens](https://vercel.com/account/tokens)
+2. Get org + project IDs (from a linked machine, or Vercel project settings):
+   ```bash
+   npx vercel link
+   # then open .vercel/project.json → orgId, projectId
+   ```
+3. In GitHub repo → **Settings → Secrets and variables → Actions**, add:
+   - `VERCEL_TOKEN`
+   - `VERCEL_ORG_ID`
+   - `VERCEL_PROJECT_ID`
+4. Ensure all app env vars exist in the **Vercel project** (Production + Preview).  
+   `vercel pull` downloads them for the Actions build.
+5. Push to `main` → workflow **Deploy Production to Vercel** runs.  
+   Other branches / PRs → **Deploy Preview to Vercel**.
+
+You can also run workflows manually under the **Actions** tab (`workflow_dispatch`).
