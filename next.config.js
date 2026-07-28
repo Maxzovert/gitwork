@@ -6,6 +6,17 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
+  // Reduce peak memory during Vercel/CI builds (avoids OOM retries).
+  experimental: {
+    webpackMemoryOptimizations: true,
+  },
+  webpack: (webpackConfig, { dev }) => {
+    if (!dev) {
+      // PackFileCacheStrategy "Serializing big strings" can spike memory on small builders.
+      webpackConfig.cache = false;
+    }
+    return webpackConfig;
+  },
   images: {
     remotePatterns: [
       {
