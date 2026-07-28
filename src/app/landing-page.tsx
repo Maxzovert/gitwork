@@ -11,6 +11,52 @@ import { GitworkLogo } from "@/components/gitwork-logo";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
+/** Outer-gutter placements only (2xl+). Sparse — one accent per side max. */
+function LandingFloat({
+  src,
+  kind,
+  className,
+  width,
+  height,
+}: {
+  src: string;
+  kind: "svg" | "logo";
+  className: string;
+  width: number;
+  height: number;
+}) {
+  const scale = kind === "svg" ? 1.35 : 1;
+  const renderWidth = Math.round(width * scale);
+  const renderHeight = Math.round(height * scale);
+
+  return (
+    <div
+      data-landing-float
+      className={`pointer-events-none absolute z-0 hidden 2xl:block ${className}`}
+    >
+      {kind === "logo" ? (
+        <div className="rounded-xl bg-white p-2 shadow-[0_8px_20px_rgba(20,20,19,0.08)] ring-1 ring-[#d1cdc7]/70">
+          <Image
+            src={src}
+            alt=""
+            width={renderWidth}
+            height={renderHeight}
+            className="select-none object-contain"
+          />
+        </div>
+      ) : (
+        <Image
+          src={src}
+          alt=""
+          width={renderWidth}
+          height={renderHeight}
+          className="select-none"
+        />
+      )}
+    </div>
+  );
+}
+
 const services = [
   {
     id: "qa",
@@ -194,6 +240,7 @@ export default function LandingPage() {
 
       gsap.set("[data-hero-el]", { opacity: 0, y: 36 });
       gsap.set("[data-nav]", { opacity: 0, y: -20 });
+      gsap.set("[data-landing-float]", { opacity: 0, scale: 0.92 });
 
       gsap
         .timeline({ defaults: { ease: "power3.out" } })
@@ -202,7 +249,30 @@ export default function LandingPage() {
           "[data-hero-el]",
           { opacity: 1, y: 0, duration: 0.9, stagger: 0.12 },
           "-=0.35",
+        )
+        .to(
+          "[data-landing-float]",
+          {
+            opacity: 1,
+            scale: 1,
+            duration: 0.75,
+            stagger: 0.05,
+          },
+          "-=0.55",
         );
+
+      gsap.utils.toArray<HTMLElement>("[data-landing-float]").forEach((el, i) => {
+        gsap.to(el, {
+          y: i % 2 === 0 ? -6 : 5,
+          x: i % 3 === 0 ? 2 : -2,
+          rotation: `+=${i % 2 === 0 ? 1.2 : -1.2}`,
+          repeat: -1,
+          yoyo: true,
+          duration: 4 + (i % 5) * 0.35,
+          ease: "sine.inOut",
+          delay: i * 0.08,
+        });
+      });
 
       /* Continuous scrub — tracks scroll both ways */
       gsap.fromTo(
@@ -332,7 +402,16 @@ export default function LandingPage() {
   );
 
   return (
-    <div ref={root} className="bg-[#f3f0ee] text-[#141413]">
+    <div ref={root} className="relative overflow-x-hidden bg-[#f3f0ee] text-[#141413]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(ellipse 70% 50% at 12% 18%, rgba(207,69,0,0.07), transparent 55%), radial-gradient(ellipse 55% 45% at 88% 82%, rgba(56,96,190,0.06), transparent 50%)",
+        }}
+      />
+
       {/* Floating nav pill */}
       <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-6">
         <header
@@ -409,8 +488,37 @@ export default function LandingPage() {
       {/* Hero */}
       <section
         data-hero
-        className="relative mx-auto max-w-[1280px] overflow-hidden px-6 pb-16 pt-28 sm:px-10 sm:pt-32 lg:px-12"
+        className="relative mx-auto max-w-[1280px] overflow-visible px-6 pb-16 pt-28 sm:px-10 sm:pt-32 lg:px-12"
       >
+        <LandingFloat
+          src="/decorative/git-branch.svg"
+          kind="svg"
+          className="-left-20 top-40 rotate-[-8deg] xl:-left-28"
+          width={52}
+          height={70}
+        />
+        <LandingFloat
+          src="/decorative/network-nodes.svg"
+          kind="svg"
+          className="-right-20 top-44 rotate-[7deg] xl:-right-28"
+          width={72}
+          height={60}
+        />
+        <LandingFloat
+          src="/onboarding/github-logo.png"
+          kind="logo"
+          className="-left-16 bottom-36 rotate-[-5deg] xl:-left-24"
+          width={40}
+          height={40}
+        />
+        <LandingFloat
+          src="/onboarding/meet-logo.png"
+          kind="logo"
+          className="-right-16 bottom-40 rotate-[5deg] xl:-right-24"
+          width={40}
+          height={40}
+        />
+
         <div className="relative z-10 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end lg:gap-16">
           <div>
             <Eyebrow>
@@ -470,9 +578,24 @@ export default function LandingPage() {
       {/* New features */}
       <section
         data-reveal-section
-        className="mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12"
+        className="relative mx-auto max-w-[1280px] overflow-visible px-6 py-24 sm:px-10 lg:px-12"
       >
-        <div className="mx-auto max-w-3xl text-center">
+        <LandingFloat
+          src="/decorative/merge-nodes.svg"
+          kind="svg"
+          className="-left-20 top-20 rotate-[-6deg] xl:-left-28"
+          width={64}
+          height={56}
+        />
+        <LandingFloat
+          src="/onboarding/teams-logo.png"
+          kind="logo"
+          className="-right-20 bottom-12 rotate-[5deg] xl:-right-28"
+          width={40}
+          height={40}
+        />
+
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
           <Eyebrow>
             <span data-reveal>Latest additions</span>
           </Eyebrow>
@@ -491,7 +614,7 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mt-14 grid gap-6 md:grid-cols-3">
+        <div className="relative z-10 mt-14 grid gap-6 md:grid-cols-3">
           {newFeatures.map((feature) => (
             <article
               key={feature.id}
@@ -515,17 +638,24 @@ export default function LandingPage() {
       {/* Problem */}
       <section
         data-reveal-section
-        className="relative mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
+        className="relative mx-auto max-w-[1280px] overflow-visible px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
-        {/* Decorative: small accent dot cluster in left margin */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute top-32 left-2 hidden gap-2 lg:flex lg:flex-col"
-        >
-          <span className="size-2 rounded-full bg-[#f37338]/70" />
-          <span className="ml-3 size-1.5 rounded-full bg-[#f37338]/40" />
-        </div>
+        <LandingFloat
+          src="/onboarding/zoom-logo.png"
+          kind="logo"
+          className="-left-20 top-28 rotate-[4deg] xl:-left-28"
+          width={56}
+          height={28}
+        />
+        <LandingFloat
+          src="/decorative/file-tree.svg"
+          kind="svg"
+          className="-right-20 bottom-16 rotate-[-5deg] xl:-right-28"
+          width={48}
+          height={64}
+        />
 
+        <div className="relative z-10">
         <Eyebrow>
           <span data-reveal>The quiet problem</span>
         </Eyebrow>
@@ -552,6 +682,7 @@ export default function LandingPage() {
             </p>
           </div>
         </div>
+        </div>
       </section>
 
       {/* Constellation services — SVG lives only in the stage, under portraits */}
@@ -560,6 +691,21 @@ export default function LandingPage() {
         data-constellation
         className="relative scroll-mt-28 overflow-hidden bg-[#fcfbfa] py-28 sm:py-36"
       >
+        <LandingFloat
+          src="/decorative/code-braces.svg"
+          kind="svg"
+          className="left-8 top-32 rotate-[-5deg] xl:left-14"
+          width={48}
+          height={48}
+        />
+        <LandingFloat
+          src="/onboarding/teams-logo.png"
+          kind="logo"
+          className="right-8 bottom-24 rotate-[4deg] xl:right-14"
+          width={40}
+          height={40}
+        />
+
         <div className="relative z-10 mx-auto max-w-[1280px] px-6 sm:px-10 lg:px-12">
           <p
             aria-hidden
@@ -652,8 +798,24 @@ export default function LandingPage() {
       <section
         id="story"
         data-reveal-section
-        className="scroll-mt-28 relative mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
+        className="scroll-mt-28 relative mx-auto max-w-[1280px] overflow-visible px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
+        <LandingFloat
+          src="/decorative/angle-brackets.svg"
+          kind="svg"
+          className="-left-20 top-36 rotate-[6deg] xl:-left-28"
+          width={48}
+          height={48}
+        />
+        <LandingFloat
+          src="/onboarding/meet-logo.png"
+          kind="logo"
+          className="-right-20 bottom-20 rotate-[-5deg] xl:-right-28"
+          width={40}
+          height={40}
+        />
+
+        <div className="relative z-10">
         <p
           aria-hidden
           className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
@@ -710,6 +872,7 @@ export default function LandingPage() {
             );
           })}
         </div>
+        </div>
       </section>
 
       {/* How it works */}
@@ -718,6 +881,21 @@ export default function LandingPage() {
         data-steps
         className="scroll-mt-28 relative overflow-hidden bg-[#fcfbfa] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
+        <LandingFloat
+          src="/onboarding/github-logo.png"
+          kind="logo"
+          className="left-8 top-40 rotate-[-5deg] xl:left-14"
+          width={40}
+          height={40}
+        />
+        <LandingFloat
+          src="/decorative/browser-window.svg"
+          kind="svg"
+          className="right-8 bottom-24 rotate-[6deg] xl:right-14"
+          width={56}
+          height={44}
+        />
+
         <div className="relative z-10 mx-auto max-w-[1280px]">
           <p
             aria-hidden
@@ -755,8 +933,24 @@ export default function LandingPage() {
       {/* Who — interactive audience cards */}
       <section
         data-audience
-        className="mx-auto max-w-[1280px] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
+        className="relative mx-auto max-w-[1280px] overflow-visible px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
+        <LandingFloat
+          src="/decorative/chat-bubble.svg"
+          kind="svg"
+          className="-left-20 top-32 rotate-[5deg] xl:-left-28"
+          width={52}
+          height={52}
+        />
+        <LandingFloat
+          src="/onboarding/zoom-logo.png"
+          kind="logo"
+          className="-right-20 bottom-24 rotate-[-4deg] xl:-right-28"
+          width={56}
+          height={28}
+        />
+
+        <div className="relative z-10">
         <p
           aria-hidden
           className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
@@ -789,13 +983,29 @@ export default function LandingPage() {
             </Link>
           ))}
         </div>
+        </div>
       </section>
 
       {/* CTA band */}
-      <section className="px-6 pb-8 sm:px-10 lg:px-12">
+      <section className="relative overflow-visible px-6 pb-8 sm:px-10 lg:px-12">
+        <LandingFloat
+          src="/decorative/timeline.svg"
+          kind="svg"
+          className="left-4 top-10 rotate-[-6deg] xl:left-10"
+          width={48}
+          height={48}
+        />
+        <LandingFloat
+          src="/onboarding/github-logo.png"
+          kind="logo"
+          className="right-4 bottom-8 rotate-[5deg] xl:right-10"
+          width={40}
+          height={40}
+        />
+
         <div
           data-cta-block
-          className="shadow-lift mx-auto max-w-[1280px] rounded-[40px] bg-[#141413] px-8 py-16 text-[#f3f0ee] sm:px-14 sm:py-20"
+          className="shadow-lift relative z-10 mx-auto max-w-[1280px] rounded-[40px] bg-[#141413] px-8 py-16 text-[#f3f0ee] sm:px-14 sm:py-20"
         >
           <h2 className="font-display max-w-xl text-[36px] leading-[44px] tracking-[-0.02em] sm:text-[48px] sm:leading-[1.05]">
             We&apos;re ready when your next repo is

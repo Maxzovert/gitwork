@@ -42,12 +42,12 @@ const ONBOARDING_STEPS = [
     description: "Name the project and add the GitHub repository you want to bring in.",
   },
   {
-    title: "GitHub token",
-    description: "Grant Gitwork permission to read the repo, branches, and commit activity.",
-  },
-  {
     title: "Get a token",
     description: "Follow the shortest path inside GitHub to create the right access token.",
+  },
+  {
+    title: "GitHub token",
+    description: "Grant Gitwork permission to read the repo, branches, and commit activity.",
   },
   {
     title: "Review",
@@ -134,7 +134,7 @@ export function CreateProjectOnboarding() {
   const router = useRouter();
   const root = useRef<HTMLDivElement>(null);
   const [step, setStep] = React.useState(1);
-  const { register, handleSubmit, watch, reset, setValue } = useForm<FormInput>({
+  const { register, handleSubmit, watch, setValue } = useForm<FormInput>({
     defaultValues: {
       projectName: "",
       repoUrl: "",
@@ -243,7 +243,7 @@ export function CreateProjectOnboarding() {
       }
     }
 
-    if (step === 3 && !githubToken?.trim()) {
+    if (step === 4 && !githubToken?.trim()) {
       toast.error("Paste a GitHub token to continue.");
       return;
     }
@@ -252,6 +252,12 @@ export function CreateProjectOnboarding() {
   }
 
   function onSubmit(data: FormInput) {
+    // Enter in an input submits the form — never create until the final step.
+    if (step < ONBOARDING_STEPS.length) {
+      goNext();
+      return;
+    }
+
     if (!data.projectName.trim()) {
       toast.error("Add a project name before creating the project.");
       return;
@@ -284,8 +290,6 @@ export function CreateProjectOnboarding() {
             });
           }
           void utils.project.getProjects.invalidate();
-          reset();
-          setStep(1);
           router.replace("/dashboard");
         },
         onError: (error) => {
@@ -560,6 +564,64 @@ export function CreateProjectOnboarding() {
 
               {step === 3 ? (
                 <div className="space-y-6">
+                  <ol className="list-decimal space-y-2.5 pl-5 text-sm leading-6 text-[#696969]">
+                    <li>Open GitHub and go to Settings.</li>
+                    <li>Open Developer settings.</li>
+                    <li>Choose Personal access tokens, then Fine-grained tokens.</li>
+                    <li>Create a token for the repository you want to connect.</li>
+                    <li>
+                      Under Repository permissions, grant access for:
+                      <ul className="mt-2 list-none space-y-1.5 pl-0">
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          <span>
+                            <span className="font-medium text-[#141413]">Branches</span> — Read
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          <span>
+                            <span className="font-medium text-[#141413]">Contents</span> — Read
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          <span>
+                            <span className="font-medium text-[#141413]">Metadata</span> — Read
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          <span>
+                            <span className="font-medium text-[#141413]">Pull requests</span> — Read
+                          </span>
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          <span>
+                            <span className="font-medium text-[#141413]">Webhooks</span> — Read and
+                            write
+                          </span>
+                        </li>
+                      </ul>
+                    </li>
+                    <li>Copy the token and paste it in the next step.</li>
+                  </ol>
+
+                  <Link
+                    href="https://github.com/settings/personal-access-tokens/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
+                  >
+                    Open GitHub token settings
+                    <ExternalLink className="size-4" />
+                  </Link>
+                </div>
+              ) : null}
+
+              {step === 4 ? (
+                <div className="space-y-6">
                   <ul className="space-y-2.5 text-sm leading-6 text-[#696969]">
                     <li className="flex gap-2">
                       <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
@@ -592,33 +654,10 @@ export function CreateProjectOnboarding() {
                       className="h-12 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
                     />
                     <p className="text-xs leading-5 text-[#696969]">
-                      Fine-grained PAT with Contents: Read, Metadata: Read, and webhook write if you want auto sync.
+                      Fine-grained PAT with Branches, Contents, Metadata, Pull
+                      requests (Read), and Webhooks (Read and write).
                     </p>
                   </div>
-                </div>
-              ) : null}
-
-              {step === 4 ? (
-                <div className="space-y-6">
-                  <ol className="list-decimal space-y-2.5 pl-5 text-sm leading-6 text-[#696969]">
-                    <li>Open GitHub and go to Settings.</li>
-                    <li>Open Developer settings.</li>
-                    <li>Choose Personal access tokens, then Fine-grained tokens.</li>
-                    <li>Create a token for the repository you want to connect.</li>
-                    <li>Grant Contents: Read and metadata access.</li>
-                    <li>Add webhook or admin write if you want auto sync.</li>
-                    <li>Copy the token and paste it in the previous step.</li>
-                  </ol>
-
-                  <Link
-                    href="https://github.com/settings/personal-access-tokens/new"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
-                  >
-                    Open GitHub token settings
-                    <ExternalLink className="size-4" />
-                  </Link>
                 </div>
               ) : null}
 
