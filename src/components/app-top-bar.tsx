@@ -31,6 +31,11 @@ export function AppTopBar() {
             avatarBox: "size-8 rounded-full ring-1 ring-[#d1cdc7]",
           },
         }}
+        userProfileProps={{
+          additionalOAuthScopes: {
+            github: ["repo"],
+          },
+        }}
       />
     </header>
   );

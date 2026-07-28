@@ -41,7 +41,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
       }
 
       const retryMatch = message.match(/retry in ([\d.]+)s/i);
-      const waitMs = retryMatch
+      const waitMs = retryMatch?.[1]
         ? Math.ceil(parseFloat(retryMatch[1]) * 1000) + 500
         : Math.min(30_000, 2000 * 2 ** attempt);
 

@@ -2,11 +2,10 @@ import { createHash } from "crypto";
 import { GithubRepoLoader } from "@langchain/community/document_loaders/web/github";
 import dotenv from "dotenv";
 import { Document } from "@langchain/core/documents";
-import { Octokit } from "octokit";
 import { Prisma } from "@prisma/client";
 import { summariseCode, generateEmbeddings as embedSummary } from "./gemini";
 import { db } from "@/server/db";
-import { octokit } from "./github";
+import { createGithubClient } from "./github-auth";
 import { parseGithubUrl } from "./github-url";
 
 dotenv.config();
@@ -105,7 +104,7 @@ const pickFilesToIndex = (docs: Document[]) => {
 };
 
 function getGithubClient(githubToken?: string) {
-  return githubToken ? new Octokit({ auth: githubToken }) : octokit;
+  return createGithubClient(githubToken);
 }
 
 const getDefaultBranch = async (githubUrl: string, githubToken?: string) => {

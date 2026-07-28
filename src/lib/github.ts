@@ -1,12 +1,15 @@
 import { db } from "@/server/db";
-import { Octokit } from "octokit";
 import { aiSummariesCommits } from "./gemini";
+import {
+  createGithubClient,
+  fallbackOctokit,
+  resolveProjectGithubToken,
+} from "./github-auth";
 import { parseGithubUrl } from "./github-url";
 import type { GithubPushCommit } from "./github-webhook";
 
-export const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
+/** @deprecated Prefer createGithubClient / resolveProjectGithubToken */
+export const octokit = fallbackOctokit;
 
 export type CommitInput = {
   commitHash: string;
@@ -18,9 +21,11 @@ export type CommitInput = {
 
 export const getCommitHashes = async (
   githubUrl: string,
+  githubToken?: string,
 ): Promise<CommitInput[]> => {
   const { owner, repo } = parseGithubUrl(githubUrl);
-  const { data } = await octokit.rest.repos.listCommits({
+  const client = createGithubClient(githubToken);
+  const { data } = await client.rest.repos.listCommits({
     owner,
     repo,
     per_page: 15,
@@ -42,6 +47,7 @@ export const getCommitHashes = async (
 export async function ingestCommits(
   projectId: string,
   commits: CommitInput[],
+  githubToken?: string,
 ) {
   const { githubUrl } = await fetchProjectGithubUrl(projectId);
   const unprocessedCommits = await filterUnprocessedCommits(
@@ -65,8 +71,13 @@ export async function ingestCommits(
     skipDuplicates: true,
   });
 
-  void enhanceCommitSummaries(projectId, githubUrl, unprocessedCommits).catch(
-    (error) => console.error("Failed to enhance commit summaries:", error),
+  void enhanceCommitSummaries(
+    projectId,
+    githubUrl,
+    unprocessedCommits,
+    githubToken,
+  ).catch((error) =>
+    console.error("Failed to enhance commit summaries:", error),
   );
 
   return result;
@@ -86,24 +97,35 @@ export async function ingestPushCommits(
   projectId: string,
   commits: GithubPushCommit[],
 ) {
-  return ingestCommits(projectId, mapPushCommits(commits));
+  const githubToken = await resolveProjectGithubToken(projectId);
+  return ingestCommits(projectId, mapPushCommits(commits), githubToken);
 }
 
 /** One-time backfill when a project is created. */
-export const pullCommits = async (projectId: string) => {
+export const pullCommits = async (
+  projectId: string,
+  githubToken?: string,
+) => {
   const { githubUrl } = await fetchProjectGithubUrl(projectId);
-  const commitHashes = await getCommitHashes(githubUrl);
-  return ingestCommits(projectId, commitHashes);
+  const token =
+    githubToken ?? (await resolveProjectGithubToken(projectId));
+  const commitHashes = await getCommitHashes(githubUrl, token);
+  return ingestCommits(projectId, commitHashes, token);
 };
 
 async function enhanceCommitSummaries(
   projectId: string,
   githubUrl: string,
   commits: CommitInput[],
+  githubToken?: string,
 ) {
   for (const commit of commits) {
     try {
-      const summary = await summariesCommits(githubUrl, commit.commitHash);
+      const summary = await summariesCommits(
+        githubUrl,
+        commit.commitHash,
+        githubToken,
+      );
       if (
         !summary ||
         summary.includes("quota exceeded") ||
@@ -125,11 +147,16 @@ async function enhanceCommitSummaries(
   }
 }
 
-export async function summariesCommits(githubUrl: string, commitHash: string) {
+export async function summariesCommits(
+  githubUrl: string,
+  commitHash: string,
+  githubToken?: string,
+) {
   try {
     const { owner, repo } = parseGithubUrl(githubUrl);
+    const client = createGithubClient(githubToken);
 
-    const { data } = await octokit.rest.repos.getCommit({
+    const { data } = await client.rest.repos.getCommit({
       owner,
       repo,
       ref: commitHash,

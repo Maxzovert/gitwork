@@ -1,19 +1,14 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { Octokit } from "octokit";
 
 import { db } from "@/server/db";
+import {
+  createGithubClient,
+  resolveProjectGithubToken,
+} from "@/lib/github-auth";
 import { getAppUrl, parseGithubUrl, repoUrlsMatch } from "@/lib/github-url";
-import { octokit } from "@/lib/github";
 
 function createWebhookSecret() {
   return randomBytes(32).toString("hex");
-}
-
-function getOctokit(githubToken?: string) {
-  if (githubToken) {
-    return new Octokit({ auth: githubToken });
-  }
-  return octokit;
 }
 
 export function verifyGithubWebhookSignature(
@@ -60,7 +55,8 @@ export async function registerProjectWebhook(
   }
 
   const { owner, repo } = parseGithubUrl(project.githubUrl);
-  const client = getOctokit(githubToken);
+  const token = await resolveProjectGithubToken(projectId, githubToken);
+  const client = createGithubClient(token);
   const webhookSecret = project.webhookSecret ?? createWebhookSecret();
   const webhookUrl = `${getAppUrl()}/api/webhooks/github`;
 
@@ -106,7 +102,8 @@ export async function deleteProjectWebhook(
 
   try {
     const { owner, repo } = parseGithubUrl(project.githubUrl);
-    const client = getOctokit(githubToken);
+    const token = await resolveProjectGithubToken(projectId, githubToken);
+    const client = createGithubClient(token);
     await client.rest.repos.deleteWebhook({
       owner,
       repo,

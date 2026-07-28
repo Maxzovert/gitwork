@@ -1,9 +1,8 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -23,7 +22,6 @@ import { api } from "@/trpc/react";
 type FormInput = {
   repoUrl: string;
   projectName: string;
-  githubToken?: string;
   branch?: string;
 };
 
@@ -42,14 +40,6 @@ const ONBOARDING_STEPS = [
     description: "Add a project name and the GitHub repository you want to connect.",
   },
   {
-    title: "GitHub token",
-    description: "Provide access so Gitwork can load code, branches, and sync updates.",
-  },
-  {
-    title: "Get a token",
-    description: "Follow the GitHub steps to create the right token with the right permissions.",
-  },
-  {
     title: "Review",
     description: "Choose a branch and confirm the project setup before indexing starts.",
   },
@@ -62,21 +52,24 @@ function isGithubRepoUrl(value: string) {
 function getFriendlyGitHubError(message: string) {
   const lower = message.toLowerCase();
 
-  if (lower.includes("github token is required")) {
-    return "Add a GitHub token in step 3 so Gitwork can read the repository and start indexing.";
+  if (
+    lower.includes("connect your github") ||
+    lower.includes("precondition_failed")
+  ) {
+    return "Connect GitHub on the Create Project page first, then try again.";
   }
   if (lower.includes("bad credentials") || lower.includes("unauthorized")) {
-    return "That GitHub token was rejected. Check that you pasted the full token and that it has access to this repository.";
+    return "GitHub authorization was rejected. Reconnect GitHub and try again.";
   }
   if (lower.includes("not found")) {
-    return "Gitwork could not access that repository. Check the URL and confirm the token can access it.";
+    return "Gitwork could not access that repository. Check the URL and your GitHub access.";
   }
   if (
     lower.includes("resource not accessible") ||
     lower.includes("forbidden") ||
     lower.includes("permission")
   ) {
-    return "The token does not have enough GitHub permissions. Use a fine-grained token with repository access and contents read permission.";
+    return "GitHub needs the repo scope. Reconnect GitHub and approve repository access.";
   }
 
   return message || "Project creation failed";
@@ -118,7 +111,6 @@ export function CreateProjectDialog({
     defaultValues: {
       projectName: "",
       repoUrl: "",
-      githubToken: "",
       branch: "",
     },
   });
@@ -129,19 +121,16 @@ export function CreateProjectDialog({
 
   const projectName = watch("projectName");
   const repoUrl = watch("repoUrl");
-  const githubToken = watch("githubToken");
   const branch = watch("branch");
   const trimmedRepoUrl = repoUrl?.trim() ?? "";
   const repoUrlValid = isGithubRepoUrl(trimmedRepoUrl);
-  const tokenProvided = Boolean(githubToken?.trim());
 
   const branchesQuery = api.project.getBranches.useQuery(
     {
       githubUrl: trimmedRepoUrl,
-      githubToken: githubToken?.trim() || undefined,
     },
     {
-      enabled: open && step === 5 && repoUrlValid,
+      enabled: open && step === 3 && repoUrlValid,
       retry: false,
     },
   );
@@ -184,13 +173,6 @@ export function CreateProjectDialog({
       }
     }
 
-    if (step === 3 && !githubToken?.trim()) {
-      toast.error(
-        "Paste a GitHub token to continue, or set GITHUB_TOKEN on the server if you want to use a shared token.",
-      );
-      return;
-    }
-
     setStep((current) => Math.min(current + 1, ONBOARDING_STEPS.length));
   }
 
@@ -209,16 +191,10 @@ export function CreateProjectDialog({
       return;
     }
 
-    if (!data.githubToken?.trim()) {
-      toast.error("Add a GitHub token before creating the project.");
-      return;
-    }
-
     createProject.mutate(
       {
         githubUrl: data.repoUrl.trim(),
         name: data.projectName.trim(),
-        githubToken: data.githubToken.trim(),
         branch: data.branch?.trim() || undefined,
       },
       {
@@ -292,7 +268,7 @@ export function CreateProjectDialog({
                 </ul>
               </div>
               <div className="rounded-2xl border border-[#e8e2da] bg-[#fff8f4] p-4 text-sm leading-6 text-[#6b3d26]">
-                Gitwork needs GitHub access up front because project creation starts indexing and sync work immediately after setup.
+                Authorize GitHub once on the Create page — then add repos without pasting tokens.
               </div>
             </div>
           ) : null}
@@ -329,7 +305,7 @@ export function CreateProjectDialog({
                   className="h-11 rounded-xl border-[#d1cdc7] bg-white text-[#141413] placeholder:text-[#696969]"
                 />
                 <p className="text-xs text-[#696969]">
-                  Gitwork will use this repository to load branches, index code, and sync commits.
+                  Uses your connected GitHub account to load branches, index code, and sync commits.
                 </p>
                 {repoUrl && !repoUrlValid ? (
                   <p className="text-xs text-[#9a3a0a]">
@@ -343,80 +319,6 @@ export function CreateProjectDialog({
           {step === 3 ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-[#d1cdc7] bg-white p-4">
-                <h3 className="text-sm font-semibold text-[#141413]">Why Gitwork asks for a token</h3>
-                <ul className="mt-3 space-y-2 text-sm leading-6 text-[#696969]">
-                  <li>Read the repository contents for indexing and file-aware Q&amp;A.</li>
-                  <li>Load available branches and pick the default branch automatically.</li>
-                  <li>Pull recent commits and optionally register a webhook for future sync.</li>
-                </ul>
-              </div>
-
-              <div className="space-y-2">
-                <label
-                  htmlFor="create-github-token"
-                  className="text-sm font-medium text-[#141413]"
-                >
-                  GitHub token
-                </label>
-                <Input
-                  id="create-github-token"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  {...register("githubToken")}
-                  placeholder="Paste your GitHub personal access token"
-                  className="h-11 rounded-xl border-[#d1cdc7] bg-white text-[#141413] placeholder:text-[#696969]"
-                />
-                <p className="text-xs text-[#696969]">
-                  Use a fine-grained personal access token with access to this repository.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-[#e8e2da] bg-[#fff8f4] p-4">
-                <p className="text-sm font-medium text-[#141413]">Recommended permissions</p>
-                <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[#696969]">
-                  <li>`Contents: Read`</li>
-                  <li>`Metadata: Read`</li>
-                  <li>`Webhooks` or repository admin write access if you want push webhook setup</li>
-                </ul>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 4 ? (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-[#d1cdc7] bg-white p-4">
-                <h3 className="text-sm font-semibold text-[#141413]">How to get the token from GitHub</h3>
-                <ol className="mt-3 space-y-2 pl-5 text-sm leading-6 text-[#696969]">
-                  <li>Open GitHub and go to `Settings`.</li>
-                  <li>Open `Developer settings`.</li>
-                  <li>Select `Personal access tokens` and then `Fine-grained tokens`.</li>
-                  <li>Create a new token for the repository you want to connect.</li>
-                  <li>Grant `Contents: Read` and metadata access.</li>
-                  <li>Add webhook or admin write permission if you want auto sync via webhook.</li>
-                  <li>Copy the token and paste it into step 3.</li>
-                </ol>
-              </div>
-
-              <Link
-                href="https://github.com/settings/personal-access-tokens/new"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
-              >
-                Open GitHub token settings
-                <ExternalLink className="size-4" />
-              </Link>
-
-              <div className="rounded-2xl border border-[#e8e2da] bg-[#fff8f4] p-4 text-sm leading-6 text-[#6b3d26]">
-                Keep the token somewhere safe. GitHub may only show the full value once after creation.
-              </div>
-            </div>
-          ) : null}
-
-          {step === 5 ? (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-[#d1cdc7] bg-white p-4">
                 <h3 className="text-sm font-semibold text-[#141413]">Review project setup</h3>
                 <dl className="mt-3 space-y-3 text-sm">
                   <div>
@@ -427,12 +329,6 @@ export function CreateProjectDialog({
                     <dt className="text-[#696969]">Repository</dt>
                     <dd className="break-all font-medium text-[#141413]">
                       {trimmedRepoUrl || "Not set"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[#696969]">GitHub token</dt>
-                    <dd className="font-medium text-[#141413]">
-                      {tokenProvided ? "Added" : "Missing"}
                     </dd>
                   </div>
                 </dl>
@@ -461,7 +357,7 @@ export function CreateProjectDialog({
                     <option value="">
                       {branchesQuery.isLoading
                         ? "Loading branches…"
-                        : "Add a valid repo and token to load branches"}
+                        : "Connect GitHub and add a valid repo to load branches"}
                     </option>
                   )}
                 </select>
@@ -514,8 +410,7 @@ export function CreateProjectDialog({
                 disabled={
                   createProject.isPending ||
                   !projectName.trim() ||
-                  !repoUrlValid ||
-                  !githubToken?.trim()
+                  !repoUrlValid
                 }
                 className="h-11 rounded-[20px]"
               >

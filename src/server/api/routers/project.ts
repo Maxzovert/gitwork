@@ -4,6 +4,12 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { pullCommits } from "@/lib/github";
 import {
+  getGithubConnectionStatus,
+  listUserGithubRepos,
+  requireUserGithubToken,
+  resolveProjectGithubToken,
+} from "@/lib/github-auth";
+import {
   getLatestIndexingJob,
   listGithubBranches,
   startIndexingJob,
@@ -26,16 +32,26 @@ function createInviteToken() {
 }
 
 export const projectRouter = createTRPCRouter({
+  getGithubStatus: protectedProcedure.query(async ({ ctx }) => {
+    return await getGithubConnectionStatus(ctx.user.userId!);
+  }),
+
+  listGithubRepos: protectedProcedure.query(async ({ ctx }) => {
+    const token = await requireUserGithubToken(ctx.user.userId!);
+    return await listUserGithubRepos(token);
+  }),
+
   createProject: protectedProcedure
     .input(
       z.object({
         name: z.string(),
         githubUrl: z.string(),
-        githubToken: z.string().optional(),
         branch: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+
       const project = await ctx.db.project.create({
         data: {
           githubUrl: input.githubUrl,
@@ -56,15 +72,15 @@ export const projectRouter = createTRPCRouter({
         projectId: project.id,
         githubUrl: input.githubUrl,
         branch: input.branch,
-        githubToken: input.githubToken,
+        githubToken,
         triggeredByUserId: ctx.user.userId!,
       }).catch((error) =>
         console.error("Background repo indexing failed:", error),
       );
-      void pullCommits(project.id).catch((error) =>
+      void pullCommits(project.id, githubToken).catch((error) =>
         console.error("Background commit pull failed:", error),
       );
-      void registerProjectWebhook(project.id, input.githubToken).catch(
+      void registerProjectWebhook(project.id, githubToken).catch(
         (error) => console.error("Background webhook registration failed:", error),
       );
 
@@ -76,7 +92,6 @@ export const projectRouter = createTRPCRouter({
     .input(
       z.object({
         projectId: z.string().min(1),
-        githubToken: z.string().optional(),
         branch: z.string().optional(),
       }),
     )
@@ -86,12 +101,13 @@ export const projectRouter = createTRPCRouter({
         input.projectId,
         ctx.user.userId!,
       );
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
 
       return await startIndexingJob({
         projectId: project.id,
         githubUrl: project.githubUrl,
         branch: input.branch ?? project.activeBranch ?? project.defaultBranch ?? undefined,
-        githubToken: input.githubToken,
+        githubToken,
         triggeredByUserId: ctx.user.userId!,
       }).catch((error) => {
         console.error("Background repo re-indexing failed:", error);
@@ -116,11 +132,11 @@ export const projectRouter = createTRPCRouter({
     .input(
       z.object({
         githubUrl: z.string().url(),
-        githubToken: z.string().optional(),
       }),
     )
-    .query(async ({ input }) => {
-      return await listGithubBranches(input.githubUrl, input.githubToken);
+    .query(async ({ ctx, input }) => {
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      return await listGithubBranches(input.githubUrl, githubToken);
     }),
 
   getMyMembership: protectedProcedure
@@ -538,10 +554,12 @@ export const projectRouter = createTRPCRouter({
         input.projectId,
         ctx.user.userId!,
       );
+      const githubToken = await resolveProjectGithubToken(input.projectId);
 
       return await buildPullRequestDigest(
         input.projectId,
         membership.project.githubUrl,
+        githubToken,
       );
     }),
 
@@ -549,7 +567,8 @@ export const projectRouter = createTRPCRouter({
     .input(z.object({ projectId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       await requireProjectMember(ctx.db, input.projectId, ctx.user.userId!);
-      return await pullCommits(input.projectId);
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      return await pullCommits(input.projectId, githubToken);
     }),
 
   startIndexing: protectedProcedure
@@ -557,7 +576,6 @@ export const projectRouter = createTRPCRouter({
       z.object({
         projectId: z.string().min(1),
         branch: z.string().optional(),
-        githubToken: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -566,12 +584,13 @@ export const projectRouter = createTRPCRouter({
         input.projectId,
         ctx.user.userId!,
       );
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
 
       return await startIndexingJob({
         projectId: project.id,
         githubUrl: project.githubUrl,
         branch: input.branch ?? project.activeBranch ?? project.defaultBranch ?? undefined,
-        githubToken: input.githubToken,
+        githubToken,
         triggeredByUserId: ctx.user.userId!,
       });
     }),
@@ -580,12 +599,12 @@ export const projectRouter = createTRPCRouter({
     .input(
       z.object({
         projectId: z.string().min(1),
-        githubToken: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       await requireProjectOwner(ctx.db, input.projectId, ctx.user.userId!);
-      return await registerProjectWebhook(input.projectId, input.githubToken);
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      return await registerProjectWebhook(input.projectId, githubToken);
     }),
 
   saveAnswer: protectedProcedure

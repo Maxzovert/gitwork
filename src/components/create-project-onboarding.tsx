@@ -4,15 +4,17 @@ import React, { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
   ArrowRight,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   FolderGit2,
   GitBranch,
+  Github,
   Loader2,
   Workflow,
 } from "lucide-react";
@@ -23,12 +25,12 @@ import { GitworkLogo } from "@/components/gitwork-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useProjects from "@/hooks/use-projects";
+import { GITHUB_REPO_SCOPES } from "@/lib/github-scopes";
 import { api } from "@/trpc/react";
 
 type FormInput = {
   repoUrl: string;
   projectName: string;
-  githubToken?: string;
   branch?: string;
 };
 
@@ -38,16 +40,12 @@ const ONBOARDING_STEPS = [
     description: "Connect a repository and let Gitwork build your project context.",
   },
   {
+    title: "Connect GitHub",
+    description: "Authorize once. Add as many repositories as you need after that.",
+  },
+  {
     title: "Repository",
-    description: "Name the project and add the GitHub repository you want to bring in.",
-  },
-  {
-    title: "Get a token",
-    description: "Follow the shortest path inside GitHub to create the right access token.",
-  },
-  {
-    title: "GitHub token",
-    description: "Grant Gitwork permission to read the repo, branches, and commit activity.",
+    description: "Name the project and choose a GitHub repository you can access.",
   },
   {
     title: "Review",
@@ -110,21 +108,24 @@ function isGithubRepoUrl(value: string) {
 function getFriendlyGitHubError(message: string) {
   const lower = message.toLowerCase();
 
-  if (lower.includes("github token is required")) {
-    return "Add a GitHub token so Gitwork can read the repository and start indexing.";
+  if (
+    lower.includes("connect your github") ||
+    lower.includes("precondition_failed")
+  ) {
+    return "Connect GitHub with repository access, then try again.";
   }
   if (lower.includes("bad credentials") || lower.includes("unauthorized")) {
-    return "That GitHub token was rejected. Check that you pasted the full token and that it can access this repository.";
+    return "GitHub authorization expired or was rejected. Reconnect GitHub and try again.";
   }
   if (lower.includes("not found")) {
-    return "Gitwork could not access that repository. Double-check the URL and confirm the token can see it.";
+    return "Gitwork could not access that repository. Pick a repo your GitHub account can see.";
   }
   if (
     lower.includes("resource not accessible") ||
     lower.includes("forbidden") ||
     lower.includes("permission")
   ) {
-    return "The token does not have enough GitHub permissions. Use a fine-grained token with repository access and contents read permission.";
+    return "GitHub needs the repo scope. Reconnect GitHub and approve repository access.";
   }
 
   return message || "Project creation failed";
@@ -133,12 +134,14 @@ function getFriendlyGitHubError(message: string) {
 export function CreateProjectOnboarding() {
   const router = useRouter();
   const root = useRef<HTMLDivElement>(null);
+  const { user, isLoaded: userLoaded } = useUser();
   const [step, setStep] = React.useState(1);
+  const [connecting, setConnecting] = React.useState(false);
+  const [repoFilter, setRepoFilter] = React.useState("");
   const { register, handleSubmit, watch, setValue } = useForm<FormInput>({
     defaultValues: {
       projectName: "",
       repoUrl: "",
-      githubToken: "",
       branch: "",
     },
   });
@@ -147,23 +150,30 @@ export function CreateProjectOnboarding() {
   const { projects, setProjectId } = useProjects();
   const utils = api.useUtils();
 
+  const githubStatus = api.project.getGithubStatus.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+  });
+
   const projectName = watch("projectName");
   const repoUrl = watch("repoUrl");
-  const githubToken = watch("githubToken");
   const branch = watch("branch");
 
   const trimmedRepoUrl = repoUrl?.trim() ?? "";
   const repoUrlValid = isGithubRepoUrl(trimmedRepoUrl);
-  const tokenProvided = Boolean(githubToken?.trim());
   const hasExistingProjects = Boolean(projects?.length);
+  const githubReady = Boolean(
+    githubStatus.data?.connected && githubStatus.data?.hasToken,
+  );
+
+  const reposQuery = api.project.listGithubRepos.useQuery(undefined, {
+    enabled: githubReady && (step === 3 || step === 4),
+    retry: false,
+  });
 
   const branchesQuery = api.project.getBranches.useQuery(
+    { githubUrl: trimmedRepoUrl },
     {
-      githubUrl: trimmedRepoUrl,
-      githubToken: githubToken?.trim() || undefined,
-    },
-    {
-      enabled: step === 5 && repoUrlValid && tokenProvided,
+      enabled: step === 4 && repoUrlValid && githubReady,
       retry: false,
     },
   );
@@ -173,6 +183,12 @@ export function CreateProjectOnboarding() {
       setValue("branch", branchesQuery.data.defaultBranch);
     }
   }, [branch, branchesQuery.data?.defaultBranch, setValue]);
+
+  React.useEffect(() => {
+    if (step === 2 && githubReady) {
+      // Already authorized — skip friction on return from OAuth
+    }
+  }, [githubReady, step]);
 
   useGSAP(
     () => {
@@ -223,6 +239,61 @@ export function CreateProjectOnboarding() {
     );
   }, [step]);
 
+  async function connectGithub() {
+    if (!user) {
+      toast.error("Sign in first, then connect GitHub.");
+      return;
+    }
+
+    setConnecting(true);
+    try {
+      const redirectUrl = `${window.location.origin}/create`;
+      const existing = user.externalAccounts.find(
+        (account) => account.provider === "github",
+      );
+
+      if (existing) {
+        const reauth = await existing.reauthorize({
+          additionalScopes: [...GITHUB_REPO_SCOPES],
+          redirectUrl,
+        });
+        const url = reauth.verification?.externalVerificationRedirectURL;
+        if (url) {
+          window.location.href = url.href;
+          return;
+        }
+      } else {
+        const external = await user.createExternalAccount({
+          strategy: "oauth_github",
+          redirectUrl,
+          additionalScopes: [...GITHUB_REPO_SCOPES],
+        });
+        const url = external.verification?.externalVerificationRedirectURL;
+        if (url) {
+          window.location.href = url.href;
+          return;
+        }
+      }
+
+      await user.reload();
+      await utils.project.getGithubStatus.invalidate();
+      toast.success("GitHub connected.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not start GitHub authorization.";
+      toast.error(message);
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  function selectRepo(url: string, nameHint?: string) {
+    setValue("repoUrl", url);
+    if (!projectName?.trim() && nameHint) {
+      setValue("projectName", nameHint);
+    }
+  }
+
   function goBack() {
     if (step === 1) {
       router.replace("/dashboard");
@@ -232,7 +303,12 @@ export function CreateProjectOnboarding() {
   }
 
   function goNext() {
-    if (step === 2) {
+    if (step === 2 && !githubReady) {
+      toast.error("Connect GitHub before continuing.");
+      return;
+    }
+
+    if (step === 3) {
       if (!projectName?.trim()) {
         toast.error("Add a project name to continue.");
         return;
@@ -243,21 +319,19 @@ export function CreateProjectOnboarding() {
       }
     }
 
-    if (step === 4 && !githubToken?.trim()) {
-      toast.error("Paste a GitHub token to continue.");
-      return;
-    }
-
     setStep((current) => Math.min(current + 1, ONBOARDING_STEPS.length));
   }
 
   function onSubmit(data: FormInput) {
-    // Enter in an input submits the form — never create until the final step.
     if (step < ONBOARDING_STEPS.length) {
       goNext();
       return;
     }
 
+    if (!githubReady) {
+      toast.error("Connect GitHub before creating the project.");
+      return;
+    }
     if (!data.projectName.trim()) {
       toast.error("Add a project name before creating the project.");
       return;
@@ -266,16 +340,11 @@ export function CreateProjectOnboarding() {
       toast.error("Enter a valid GitHub repository URL.");
       return;
     }
-    if (!data.githubToken?.trim()) {
-      toast.error("Add a GitHub token before creating the project.");
-      return;
-    }
 
     createProject.mutate(
       {
         githubUrl: data.repoUrl.trim(),
         name: data.projectName.trim(),
-        githubToken: data.githubToken.trim(),
         branch: data.branch?.trim() || undefined,
       },
       {
@@ -305,6 +374,15 @@ export function CreateProjectOnboarding() {
 
   const stepMeta = ONBOARDING_STEPS[step - 1]!;
   const progress = step / ONBOARDING_STEPS.length;
+  const filteredRepos =
+    reposQuery.data?.filter((repo) => {
+      if (!repoFilter.trim()) return true;
+      const q = repoFilter.trim().toLowerCase();
+      return (
+        repo.fullName.toLowerCase().includes(q) ||
+        (repo.description?.toLowerCase().includes(q) ?? false)
+      );
+    }) ?? [];
 
   return (
     <div
@@ -362,7 +440,6 @@ export function CreateProjectOnboarding() {
       </div>
 
       <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        {/* Aside — brand + step identity */}
         <aside
           data-onboard-aside
           className="flex flex-col justify-between px-6 pt-8 pb-6 sm:px-10 lg:px-12 lg:py-12"
@@ -460,7 +537,6 @@ export function CreateProjectOnboarding() {
           </p>
         </aside>
 
-        {/* Main — step body */}
         <main
           data-onboard-main
           className="flex flex-col justify-center px-6 pb-10 sm:px-10 lg:px-14 lg:py-12"
@@ -514,12 +590,90 @@ export function CreateProjectOnboarding() {
                     </li>
                   </ul>
                   <p className="border-l-2 border-[#cf4500]/50 pl-4 text-sm leading-6 text-[#696969]">
-                    GitHub access is requested up front because creation immediately starts branch discovery, indexing, and commit import.
+                    Authorize GitHub once — then add any repo you can access, without pasting tokens.
                   </p>
                 </div>
               ) : null}
 
               {step === 2 ? (
+                <div className="space-y-6">
+                  {githubReady ? (
+                    <div className="rounded-xl border border-[#d1cdc7]/80 bg-[#fcfbfa] p-5">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[#2f6b3a]" />
+                        <div>
+                          <p className="font-medium text-[#141413]">
+                            {githubStatus.data?.usingServerFallback
+                              ? "Using server GitHub access"
+                              : `GitHub connected${
+                                  githubStatus.data?.username
+                                    ? ` as @${githubStatus.data.username}`
+                                    : ""
+                                }`}
+                          </p>
+                          <p className="mt-1 text-sm leading-6 text-[#696969]">
+                            {githubStatus.data?.usingServerFallback
+                              ? "GITHUB_TOKEN is set on the server. You can still authorize your own GitHub account below."
+                              : "You can add repositories without pasting a personal access token."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <ul className="space-y-2.5 text-sm leading-6 text-[#696969]">
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          Read repositories you can access for indexing and Q&amp;A.
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          Load branches, commits, and open pull requests.
+                        </li>
+                        <li className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
+                          Register webhooks so new pushes stay in sync.
+                        </li>
+                      </ul>
+                      <Button
+                        type="button"
+                        className="h-12 w-full rounded-xl"
+                        onClick={() => void connectGithub()}
+                        disabled={!userLoaded || connecting}
+                      >
+                        {connecting ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            Connecting…
+                          </>
+                        ) : (
+                          <>
+                            <Github className="size-4" />
+                            Authorize with GitHub
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs leading-5 text-[#696969]">
+                        Uses Clerk GitHub OAuth with the <code className="text-[#141413]">repo</code>{" "}
+                        scope. Enable GitHub SSO + custom credentials in the Clerk dashboard.
+                      </p>
+                    </div>
+                  )}
+
+                  {githubReady ? (
+                    <button
+                      type="button"
+                      onClick={() => void connectGithub()}
+                      className="text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
+                      disabled={connecting}
+                    >
+                      Re-authorize for more scopes
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {step === 3 ? (
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <label
@@ -550,118 +704,75 @@ export function CreateProjectOnboarding() {
                       type="url"
                       className="h-12 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
                     />
-                    <p className="text-xs leading-5 text-[#696969]">
-                      Used to load branches, index code, and sync commits.
-                    </p>
                     {repoUrl && !repoUrlValid ? (
                       <p className="text-xs text-[#9a3a0a]">
                         Enter a full GitHub URL like `https://github.com/org/repo`.
                       </p>
                     ) : null}
                   </div>
-                </div>
-              ) : null}
 
-              {step === 3 ? (
-                <div className="space-y-6">
-                  <ol className="list-decimal space-y-2.5 pl-5 text-sm leading-6 text-[#696969]">
-                    <li>Open GitHub and go to Settings.</li>
-                    <li>Open Developer settings.</li>
-                    <li>Choose Personal access tokens, then Fine-grained tokens.</li>
-                    <li>Create a token for the repository you want to connect.</li>
-                    <li>
-                      Under Repository permissions, grant access for:
-                      <ul className="mt-2 list-none space-y-1.5 pl-0">
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          <span>
-                            <span className="font-medium text-[#141413]">Branches</span> — Read
-                          </span>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          <span>
-                            <span className="font-medium text-[#141413]">Contents</span> — Read
-                          </span>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          <span>
-                            <span className="font-medium text-[#141413]">Metadata</span> — Read
-                          </span>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          <span>
-                            <span className="font-medium text-[#141413]">Pull requests</span> — Read
-                          </span>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          <span>
-                            <span className="font-medium text-[#141413]">Webhooks</span> — Read and
-                            write
-                          </span>
-                        </li>
-                      </ul>
-                    </li>
-                    <li>Copy the token and paste it in the next step.</li>
-                  </ol>
-
-                  <Link
-                    href="https://github.com/settings/personal-access-tokens/new"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
-                  >
-                    Open GitHub token settings
-                    <ExternalLink className="size-4" />
-                  </Link>
-                </div>
-              ) : null}
-
-              {step === 4 ? (
-                <div className="space-y-6">
-                  <ul className="space-y-2.5 text-sm leading-6 text-[#696969]">
-                    <li className="flex gap-2">
-                      <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                      Read repository contents for indexing and file-aware answers.
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                      Load available branches and select the default automatically.
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                      Pull recent commits and optionally register a webhook for live sync.
-                    </li>
-                  </ul>
-
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="create-github-token"
-                      className="text-sm font-medium text-[#141413]"
-                    >
-                      GitHub token
-                    </label>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-[#141413]">Your repositories</p>
+                      {reposQuery.isFetching ? (
+                        <Loader2 className="size-3.5 animate-spin text-[#696969]" />
+                      ) : null}
+                    </div>
                     <Input
-                      id="create-github-token"
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      {...register("githubToken")}
-                      placeholder="Paste your GitHub personal access token"
-                      className="h-12 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
+                      value={repoFilter}
+                      onChange={(event) => setRepoFilter(event.target.value)}
+                      placeholder="Filter repos…"
+                      className="h-10 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
                     />
-                    <p className="text-xs leading-5 text-[#696969]">
-                      Fine-grained PAT with Branches, Contents, Metadata, Pull
-                      requests (Read), and Webhooks (Read and write).
-                    </p>
+                    <div className="max-h-48 overflow-y-auto rounded-xl border border-[#d1cdc7]/80 bg-[#fcfbfa]">
+                      {reposQuery.error ? (
+                        <p className="p-3 text-xs text-[#9a3a0a]">
+                          {getFriendlyGitHubError(reposQuery.error.message)}
+                        </p>
+                      ) : filteredRepos.length ? (
+                        <ul className="divide-y divide-[#d1cdc7]/70">
+                          {filteredRepos.slice(0, 40).map((repo) => {
+                            const selected = trimmedRepoUrl === repo.url;
+                            return (
+                              <li key={repo.fullName}>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    selectRepo(repo.url, repo.fullName.split("/")[1])
+                                  }
+                                  className={[
+                                    "flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left transition-colors",
+                                    selected
+                                      ? "bg-[#cf4500]/10"
+                                      : "hover:bg-[#f3f0ee]",
+                                  ].join(" ")}
+                                >
+                                  <span className="text-sm font-medium text-[#141413]">
+                                    {repo.fullName}
+                                  </span>
+                                  {repo.description ? (
+                                    <span className="line-clamp-1 text-xs text-[#696969]">
+                                      {repo.description}
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="p-3 text-xs text-[#696969]">
+                          {reposQuery.isLoading
+                            ? "Loading repositories…"
+                            : "No repositories found. Paste a URL above instead."}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : null}
 
-              {step === 5 ? (
+              {step === 4 ? (
                 <div className="space-y-6">
                   <dl className="space-y-4 border-y border-[#d1cdc7]/80 py-5 text-sm">
                     <div className="flex items-start justify-between gap-4">
@@ -677,9 +788,13 @@ export function CreateProjectOnboarding() {
                       </dd>
                     </div>
                     <div className="flex items-start justify-between gap-4">
-                      <dt className="text-[#696969]">GitHub token</dt>
+                      <dt className="text-[#696969]">GitHub</dt>
                       <dd className="font-medium text-[#141413]">
-                        {tokenProvided ? "Added" : "Missing"}
+                        {githubReady
+                          ? githubStatus.data?.username
+                            ? `@${githubStatus.data.username}`
+                            : "Connected"
+                          : "Not connected"}
                       </dd>
                     </div>
                   </dl>
@@ -707,7 +822,7 @@ export function CreateProjectOnboarding() {
                         <option value="">
                           {branchesQuery.isLoading
                             ? "Loading branches…"
-                            : "Add a valid repo and token to load branches"}
+                            : "Select a valid repo to load branches"}
                         </option>
                       )}
                     </select>
@@ -739,7 +854,10 @@ export function CreateProjectOnboarding() {
                   type="button"
                   className="h-11 min-w-[9.5rem] rounded-xl"
                   onClick={goNext}
-                  disabled={createProject.isPending}
+                  disabled={
+                    createProject.isPending ||
+                    (step === 2 && !githubReady)
+                  }
                 >
                   Continue
                   <ChevronRight className="size-4" />
@@ -752,7 +870,7 @@ export function CreateProjectOnboarding() {
                     createProject.isPending ||
                     !projectName?.trim() ||
                     !repoUrlValid ||
-                    !githubToken?.trim()
+                    !githubReady
                   }
                 >
                   {createProject.isPending ? (

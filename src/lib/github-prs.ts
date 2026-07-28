@@ -1,16 +1,20 @@
-import { octokit } from "@/lib/github";
+import type { Octokit } from "octokit";
+
+import { createGithubClient } from "@/lib/github-auth";
 import { parseGithubUrl } from "@/lib/github-url";
 import {
   summarisePullRequest,
   summarisePullRequestDigestOverview,
 } from "@/lib/gemini";
 
+type GithubClient = ReturnType<typeof createGithubClient>;
+
 type GithubPull = Awaited<
-  ReturnType<typeof octokit.rest.pulls.list>
+  ReturnType<Octokit["rest"]["pulls"]["list"]>
 >["data"][number];
 
 type GithubPullFile = Awaited<
-  ReturnType<typeof octokit.rest.pulls.listFiles>
+  ReturnType<Octokit["rest"]["pulls"]["listFiles"]>
 >["data"][number];
 
 export type PullRequestDigest = {
@@ -91,8 +95,13 @@ function assessRisk(files: GithubPullFile[], additions: number, deletions: numbe
   return { riskLevel: "low", riskAreas: [...riskAreas] };
 }
 
-async function listAllPullFiles(owner: string, repo: string, pullNumber: number) {
-  return await octokit.paginate(octokit.rest.pulls.listFiles, {
+async function listAllPullFiles(
+  client: GithubClient,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+) {
+  return await client.paginate(client.rest.pulls.listFiles, {
     owner,
     repo,
     pull_number: pullNumber,
@@ -100,8 +109,12 @@ async function listAllPullFiles(owner: string, repo: string, pullNumber: number)
   });
 }
 
-async function listOpenPullRequests(owner: string, repo: string) {
-  const { data } = await octokit.rest.pulls.list({
+async function listOpenPullRequests(
+  client: GithubClient,
+  owner: string,
+  repo: string,
+) {
+  const { data } = await client.rest.pulls.list({
     owner,
     repo,
     state: "open",
@@ -112,8 +125,12 @@ async function listOpenPullRequests(owner: string, repo: string) {
   return data;
 }
 
-async function listRecentPullRequests(owner: string, repo: string) {
-  const { data } = await octokit.rest.pulls.list({
+async function listRecentPullRequests(
+  client: GithubClient,
+  owner: string,
+  repo: string,
+) {
+  const { data } = await client.rest.pulls.list({
     owner,
     repo,
     state: "all",
@@ -143,26 +160,30 @@ function fallbackOverview(openPrs: PullRequestDigest["openPullRequests"]) {
 export async function buildPullRequestDigest(
   projectId: string,
   githubUrl: string,
+  githubToken?: string,
 ): Promise<PullRequestDigest> {
   const { owner, repo, cleaned } = parseGithubUrl(githubUrl);
+  const client = createGithubClient(githubToken);
   const generatedAt = new Date();
   const since = new Date(generatedAt.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const [openPulls, recentPulls] = await Promise.all([
-    listOpenPullRequests(owner, repo),
-    listRecentPullRequests(owner, repo),
+    listOpenPullRequests(client, owner, repo),
+    listRecentPullRequests(client, owner, repo),
   ]);
 
   const openPullRequests = await Promise.all(
     openPulls.map(async (pull: GithubPull) => {
-      const files = await listAllPullFiles(owner, repo, pull.number);
+      const files = await listAllPullFiles(client, owner, repo, pull.number);
       const filenames = files.map((file) => file.filename);
-      const risk = assessRisk(files, pull.additions, pull.deletions);
+      const additions = files.reduce((sum, file) => sum + (file.additions ?? 0), 0);
+      const deletions = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0);
+      const risk = assessRisk(files, additions, deletions);
       const ai = await summarisePullRequest({
         title: pull.title,
         body: pull.body ?? "",
-        additions: pull.additions,
-        deletions: pull.deletions,
+        additions,
+        deletions,
         changedFiles: files.length,
         filenames: filenames.slice(0, 25),
       });
@@ -176,8 +197,8 @@ export async function buildPullRequestDigest(
         state: "open" as const,
         createdAt: pull.created_at,
         updatedAt: pull.updated_at,
-        additions: pull.additions,
-        deletions: pull.deletions,
+        additions,
+        deletions,
         changedFiles: files.length,
         summary: ai.summary,
         reviewerFocus: ai.reviewerFocus,
