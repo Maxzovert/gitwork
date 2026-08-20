@@ -6,8 +6,6 @@ import remarkGfm from "remark-gfm";
 import {
   ChevronDown,
   ChevronRight,
-  Copy,
-  FileCode2,
   Loader2,
   RefreshCw,
 } from "lucide-react";
@@ -29,40 +27,13 @@ import {
 } from "@/components/ui/dialog";
 import { askQuestion } from "./action";
 import { readStreamableValue } from "@ai-sdk/rsc";
+import {
+  FileReferences,
+  type FileReference,
+} from "@/components/file-references";
 
-export type FileReference = {
-  filename: string;
-  sourceCode: string;
-  summary: string;
-};
-
-function languageFromFilename(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "ts":
-    case "tsx":
-      return "typescript";
-    case "js":
-    case "jsx":
-      return "javascript";
-    case "py":
-      return "python";
-    case "go":
-      return "go";
-    case "rs":
-      return "rust";
-    case "json":
-      return "json";
-    case "md":
-      return "markdown";
-    case "css":
-      return "css";
-    case "html":
-      return "html";
-    default:
-      return ext ?? "text";
-  }
-}
+export type { FileReference };
+export { FileReferences };
 
 export function MarkdownAnswer({ content }: { content: string }) {
   return (
@@ -161,156 +132,6 @@ export function MarkdownAnswer({ content }: { content: string }) {
     >
       {content}
     </ReactMarkdown>
-  );
-}
-
-function fileBasename(path: string) {
-  return path.split(/[/\\]/).pop() ?? path;
-}
-
-function fileDir(path: string) {
-  const parts = path.split(/[/\\]/);
-  if (parts.length <= 1) return "";
-  return parts.slice(0, -1).join("/");
-}
-
-export function FileReferences({ files }: { files: FileReference[] }) {
-  const [active, setActive] = useState<string | null>(
-    files[0]?.filename ?? null,
-  );
-
-  if (!files.length) {
-    return (
-      <p className="text-slate text-sm">
-        No file references were retrieved for this answer.
-      </p>
-    );
-  }
-
-  const selected = files.find((f) => f.filename === active) ?? files[0]!;
-
-  const copyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(selected.sourceCode);
-      toast.success("Copied source to clipboard");
-    } catch {
-      toast.error("Could not copy source");
-    }
-  };
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-dust bg-lifted">
-      {/* Mobile: compact horizontal chips */}
-      <div className="flex gap-1.5 overflow-x-auto border-b border-dust px-3 py-2.5 md:hidden">
-        {files.map((file) => {
-          const isActive = file.filename === selected.filename;
-          return (
-            <button
-              key={file.filename}
-              type="button"
-              onClick={() => setActive(file.filename)}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors",
-                isActive
-                  ? "bg-ink text-canvas"
-                  : "bg-ghost/60 text-slate hover:bg-ghost hover:text-ink",
-              )}
-              title={file.filename}
-            >
-              <FileCode2 className="size-3.5 shrink-0 opacity-70" />
-              <span className="max-w-[10rem] truncate font-mono">
-                {fileBasename(file.filename)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex min-h-0 md:grid md:grid-cols-[minmax(11rem,15rem)_1fr]">
-        {/* Desktop: short-name file rail */}
-        <div className="hidden max-h-80 overflow-y-auto border-r border-dust md:block">
-          <ul className="p-1.5">
-            {files.map((file) => {
-              const isActive = file.filename === selected.filename;
-              const dir = fileDir(file.filename);
-              return (
-                <li key={file.filename}>
-                  <button
-                    type="button"
-                    onClick={() => setActive(file.filename)}
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
-                      isActive
-                        ? "bg-ink text-canvas"
-                        : "text-slate hover:bg-ghost/70 hover:text-ink",
-                    )}
-                    title={file.filename}
-                  >
-                    <FileCode2
-                      className={cn(
-                        "mt-0.5 size-3.5 shrink-0",
-                        isActive ? "text-arc" : "opacity-60",
-                      )}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-xs font-medium">
-                        {fileBasename(file.filename)}
-                      </span>
-                      {dir ? (
-                        <span
-                          className={cn(
-                            "mt-0.5 block truncate font-mono text-[10px] leading-tight",
-                            isActive ? "text-canvas/55" : "text-slate/70",
-                          )}
-                        >
-                          {dir}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-
-        {/* Preview pane */}
-        <div className="flex min-w-0 flex-col">
-          <div className="flex items-start justify-between gap-3 border-b border-dust px-3.5 py-2.5">
-            <div className="min-w-0">
-              <p className="truncate font-mono text-xs font-medium text-ink">
-                {fileBasename(selected.filename)}
-              </p>
-              <p className="mt-0.5 truncate font-mono text-[10px] text-slate">
-                {selected.filename}
-              </p>
-              {selected.summary ? (
-                <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-slate">
-                  {selected.summary}
-                </p>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 text-xs text-slate hover:text-ink"
-              onClick={copyCode}
-            >
-              <Copy className="size-3.5" />
-              Copy
-            </Button>
-          </div>
-          <pre className="max-h-64 overflow-auto bg-[#1a1918] p-3.5 font-mono text-[0.75rem] leading-5 text-[#f0ebe4]">
-            <code
-              className={`language-${languageFromFilename(selected.filename)}`}
-            >
-              {selected.sourceCode}
-            </code>
-          </pre>
-        </div>
-      </div>
-    </div>
   );
 }
 

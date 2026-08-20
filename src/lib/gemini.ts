@@ -256,6 +256,148 @@ ${input.openPullRequests
   };
 }
 
+export type ProjectOverviewInput = {
+  repo: string;
+  hasReadme: boolean;
+  hasContributing: boolean;
+  readme?: { path: string; content: string };
+  contributing?: { path: string; content: string };
+  setupFile?: { path: string; content: string };
+  folders: Array<{
+    name: string;
+    files: Array<{ filename: string; summary: string }>;
+  }>;
+  recentCommits: string[];
+  allowedFiles: string[];
+};
+
+export type ProjectOverviewResult = {
+  whatItIs: string;
+  howToRun: string;
+  folders: Array<{ name: string; blurb: string; files: string[] }>;
+  howToContribute: string;
+  startHere: Array<{ filename: string; why: string }>;
+  source: "docs" | "analysis" | "mixed";
+};
+
+export async function generateProjectOverview(
+  input: ProjectOverviewInput,
+): Promise<ProjectOverviewResult> {
+  const fallback: ProjectOverviewResult = {
+    whatItIs: "This repository is a software project. Open the cited files to see how it is structured.",
+    howToRun:
+      "Look at the README or package/setup file for install and start commands. If those are missing, ask a teammate how they run it locally.",
+    folders: input.folders.slice(0, 8).map((folder) => ({
+      name: folder.name,
+      blurb: `Files under ${folder.name}/ that make up part of the project.`,
+      files: folder.files.map((file) => file.filename).slice(0, 3),
+    })),
+    howToContribute:
+      input.hasContributing
+        ? "Follow the contributing guide in the repository. Keep changes small and explain them clearly."
+        : "Open a small issue or pull request. Keep the change focused, write a short description, and ask for review.",
+    startHere: input.folders
+      .flatMap((folder) => folder.files)
+      .slice(0, 5)
+      .map((file) => ({
+        filename: file.filename,
+        why: file.summary.slice(0, 140) || "A good file to open first.",
+      })),
+    source: input.hasReadme ? "mixed" : "analysis",
+  };
+
+  const allowed = input.allowedFiles.join("\n");
+
+  try {
+    const response = await withRetry(() =>
+      model.generateContent([
+        `You explain a codebase to a beginner intern.
+Write short, easy English. 2-5 sentences per text field. If you use a technical word, add a one-line explanation.
+Return valid JSON with this exact shape:
+{
+  "whatItIs": "what the project does",
+  "howToRun": "how to install and start it",
+  "folders": [{ "name": "folder", "blurb": "what this folder is for", "files": ["path/from/allowed/list"] }],
+  "howToContribute": "how a beginner can help",
+  "startHere": [{ "filename": "path/from/allowed/list", "why": "why open this first" }],
+  "source": "docs" | "analysis" | "mixed"
+}
+
+Rules:
+- source is "docs" if README/CONTRIBUTING were enough, "analysis" if you mostly used code summaries, "mixed" if both.
+- files and filename MUST be copied exactly from the allowed file list. Never invent paths.
+- folders should use real top-level names from the context.
+- startHere: 3-5 files.
+- Do not dump the README. Rewrite it simply.
+
+Repository: ${input.repo}
+Allowed files:
+${allowed}
+
+README (${input.readme?.path ?? "none"}):
+${input.readme?.content || "(missing)"}
+
+CONTRIBUTING (${input.contributing?.path ?? "none"}):
+${input.contributing?.content || "(missing)"}
+
+Setup file (${input.setupFile?.path ?? "none"}):
+${input.setupFile?.content || "(missing)"}
+
+Folder sketch:
+${input.folders
+  .map(
+    (folder) =>
+      `- ${folder.name}\n${folder.files.map((file) => `  - ${file.filename}: ${file.summary}`).join("\n")}`,
+  )
+  .join("\n")}
+
+Recent commits:
+${input.recentCommits.map((line) => `- ${line}`).join("\n") || "(none)"}
+`,
+      ]),
+    );
+
+    const parsed = parseJsonObject<ProjectOverviewResult>(response.response.text());
+    if (!parsed?.whatItIs) return fallback;
+
+    const allowedSet = new Set(input.allowedFiles);
+    const folders = Array.isArray(parsed.folders)
+      ? parsed.folders.slice(0, 10).map((folder) => ({
+          name: String(folder.name || "src"),
+          blurb: String(folder.blurb || ""),
+          files: (folder.files ?? []).filter((file) => allowedSet.has(file)).slice(0, 4),
+        }))
+      : fallback.folders;
+
+    const startHere = Array.isArray(parsed.startHere)
+      ? parsed.startHere
+          .filter((item) => allowedSet.has(item.filename))
+          .slice(0, 5)
+          .map((item) => ({
+            filename: item.filename,
+            why: String(item.why || ""),
+          }))
+      : fallback.startHere;
+
+    const source =
+      parsed.source === "docs" || parsed.source === "analysis" || parsed.source === "mixed"
+        ? parsed.source
+        : fallback.source;
+
+    return {
+      whatItIs: String(parsed.whatItIs),
+      howToRun: String(parsed.howToRun || fallback.howToRun),
+      folders: folders.filter((folder) => folder.files.length || folder.blurb),
+      howToContribute: String(parsed.howToContribute || fallback.howToContribute),
+      startHere: startHere.length ? startHere : fallback.startHere,
+      source,
+    };
+  } catch (error) {
+    console.error("Failed to generate project overview:", error);
+    return fallback;
+  }
+}
+
 export async function summariseCode(doc: Document) {
   console.log("getting summary for", doc.metadata.source);
   const code = doc.pageContent.slice(0, 10000);

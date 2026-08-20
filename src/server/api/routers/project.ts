@@ -15,6 +15,17 @@ import {
   startIndexingJob,
 } from "@/lib/github-loader";
 import { buildPullRequestDigest } from "@/lib/github-prs";
+import { generateProjectOverview } from "@/lib/gemini";
+import {
+  allowedFilenames,
+  buildFolderSketch,
+  collectCitedFilenames,
+  fetchRepoDocs,
+  isUsefulDoc,
+  resolveOverviewFileReferences,
+  type ProjectOverviewJson,
+} from "@/lib/github-overview";
+import { parseGithubUrl } from "@/lib/github-url";
 import {
   deleteProjectWebhook,
   ensureProjectWebhook,
@@ -124,6 +135,10 @@ export const projectRouter = createTRPCRouter({
           },
         },
         deletedAt: null,
+      },
+      omit: {
+        overview: true,
+        webhookSecret: true,
       },
     });
   }),
@@ -561,6 +576,126 @@ export const projectRouter = createTRPCRouter({
         membership.project.githubUrl,
         githubToken,
       );
+    }),
+
+  getOverview: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const project = membership.project;
+
+      return {
+        overview: (project.overview as (ProjectOverviewJson & {
+          fileReferences?: Array<{
+            filename: string;
+            sourceCode: string;
+            summary: string;
+          }>;
+        }) | null) ?? null,
+        overviewGeneratedAt: project.overviewGeneratedAt,
+        overviewCommitSha: project.overviewCommitSha,
+        lastIndexedCommitSha: project.lastIndexedCommitSha,
+        lastIndexedAt: project.lastIndexedAt,
+        stale: Boolean(
+          project.overview &&
+            project.lastIndexedCommitSha &&
+            project.overviewCommitSha &&
+            project.overviewCommitSha !== project.lastIndexedCommitSha,
+        ),
+      };
+    }),
+
+  generateOverview: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const project = membership.project;
+      const branch =
+        project.activeBranch ?? project.defaultBranch ?? "HEAD";
+
+      const githubToken = await resolveProjectGithubToken(input.projectId);
+      const sketch = await buildFolderSketch(
+        project.id,
+        branch === "HEAD" ? undefined : branch,
+      );
+      const docs = await fetchRepoDocs(project.githubUrl, branch, githubToken);
+
+      if (!sketch.files.length && !isUsefulDoc(docs.readme)) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Index the repository first, or add a README.md so Gitwork has something to explain.",
+        });
+      }
+
+      const recentCommits = await ctx.db.commit.findMany({
+        where: { projectId: project.id },
+        orderBy: { commitDate: "desc" },
+        take: 8,
+        select: { commitMessage: true },
+      });
+
+      const allowed = allowedFilenames({
+        readme: docs.readme,
+        contributing: docs.contributing,
+        setupFile: docs.setupFile,
+        sketchFiles: sketch.files,
+      });
+
+      const { cleaned } = parseGithubUrl(project.githubUrl);
+      const generated = await generateProjectOverview({
+        repo: cleaned,
+        hasReadme: isUsefulDoc(docs.readme),
+        hasContributing: isUsefulDoc(docs.contributing),
+        readme: docs.readme ?? undefined,
+        contributing: docs.contributing ?? undefined,
+        setupFile: docs.setupFile ?? undefined,
+        folders: sketch.folders.map((folder) => ({
+          name: folder.name,
+          files: folder.files.map((file) => ({
+            filename: file.filename,
+            summary: file.summary,
+          })),
+        })),
+        recentCommits: recentCommits.map((commit) => commit.commitMessage.split("\n")[0] ?? ""),
+        allowedFiles: [...allowed],
+      });
+
+      const fileReferences = resolveOverviewFileReferences(
+        collectCitedFilenames(generated),
+        allowed,
+        [docs.readme, docs.contributing, docs.setupFile].filter(
+          (doc): doc is NonNullable<typeof doc> => Boolean(doc),
+        ),
+        sketch.files,
+      );
+
+      const overview = { ...generated, fileReferences };
+
+      await ctx.db.project.update({
+        where: { id: project.id },
+        data: {
+          overview,
+          overviewGeneratedAt: new Date(),
+          overviewCommitSha: project.lastIndexedCommitSha,
+        },
+      });
+
+      return {
+        overview,
+        overviewGeneratedAt: new Date(),
+        overviewCommitSha: project.lastIndexedCommitSha,
+        lastIndexedCommitSha: project.lastIndexedCommitSha,
+        stale: false,
+      };
     }),
 
   syncCommits: protectedProcedure

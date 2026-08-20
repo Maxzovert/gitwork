@@ -1,10 +1,19 @@
 import { db } from "@/server/db";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 
-export async function ensureDbUser() {
+export async function ensureDbUser(options?: { refreshProfile?: boolean }) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("User not authenticated");
+  }
+
+  const existing = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+
+  if (existing && !options?.refreshProfile) {
+    return userId;
   }
 
   const client = await clerkClient();

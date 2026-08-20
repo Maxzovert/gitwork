@@ -28,8 +28,8 @@ export default function RootLayout({
       signUpFallbackRedirectUrl="/sync-user"
       afterSignOutUrl="/"
     >
-      <html lang="en" className={sofia.variable}>
-        <body className="min-h-screen font-sans antialiased">
+      <html lang="en" className={sofia.variable} suppressHydrationWarning>
+        <body className="min-h-screen font-sans antialiased" suppressHydrationWarning>
           <TRPCReactProvider>{children}</TRPCReactProvider>
           <Toaster richColors position="bottom-right" />
         </body>

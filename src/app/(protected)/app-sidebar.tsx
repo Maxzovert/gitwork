@@ -16,6 +16,7 @@ import {
 import useProjects from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
 import {
+  BookOpen,
   Bot,
   GitPullRequestArrow,
   LayoutDashboard,
@@ -46,6 +47,7 @@ function Appsidebar() {
 
   const items = [
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+    { title: "Overview", url: "/overview", icon: BookOpen },
     { title: "Q&A", url: "/qa", icon: Bot },
     { title: "Meetings", url: "/meetings", icon: Presentation },
     { title: "PR Digests", url: "/pr-digests", icon: GitPullRequestArrow },

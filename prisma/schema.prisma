@@ -59,6 +59,10 @@ model Project {
     webhookSecret    String?
     githubWebhookId  Int?
 
+    overview             Json?
+    overviewGeneratedAt  DateTime?
+    overviewCommitSha    String?
+
     deletedAt DateTime?
 
     userToProjects       userToProject[]
