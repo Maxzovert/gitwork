@@ -1,0 +1,57 @@
+# Build on GitHub Actions (more RAM), then upload a prebuilt artifact to Vercel.
+# Vercel must not build from Git — see vercel.json "git.deploymentEnabled": false.
+#
+# Required GitHub secrets:
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# App env vars live on the Vercel project (pulled via `vercel pull`).
+
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  NODE_OPTIONS: --max-old-space-size=6144
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production
+
+      - name: Build project artifacts
+        run: vercel build --prod
+        env:
+          SKIP_ENV_VALIDATION: "1"
+
+      - name: Deploy prebuilt to Vercel
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $url"
+
+      - name: Deployment URL
+        run: echo "Production URL — ${{ steps.deploy.outputs.url }}"

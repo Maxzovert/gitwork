@@ -201,19 +201,35 @@ Update Clerk + GitHub OAuth **callback / homepage URLs** for production. Point `
 
 If the Vercel builder runs out of memory, prefer Option B, Railway, or Docker.
 
-### Option B — GitHub Actions → Vercel prebuilt
+### Option B — GitHub Actions → Vercel prebuilt (recommended if OOM)
 
-Builds can run on **GitHub Actions** (more RAM), then upload output to Vercel. Use this if Vercel’s own builder OOM-retries.
+Builds run on **GitHub Actions** (~7 GB RAM), then upload a prebuilt artifact to Vercel. Use this when Vercel’s own builder OOM-retries.
 
-If present in the repo:
+[`vercel.json`](./vercel.json) sets `"git.deploymentEnabled": false` so Vercel does **not** rebuild from Git. The workflow is [`.github/workflows/deploy-vercel.yml`](./.github/workflows/deploy-vercel.yml).
 
-- `vercel.json` may set `"git.deploymentEnabled": false` so Vercel does not build from Git itself.
-- Workflow secrets typically needed:
-  - `VERCEL_TOKEN`
-  - `VERCEL_ORG_ID`
-  - `VERCEL_PROJECT_ID`
+#### One-time setup
 
-Ensure app env vars exist on the **Vercel project**. Push to `main` (or run the workflow manually) to deploy.
+1. **Link the project locally** (creates `.vercel/project.json`; do not commit it):
+
+   ```bash
+   npx vercel link
+   ```
+
+   Open `.vercel/project.json` and copy `orgId` → `VERCEL_ORG_ID`, `projectId` → `VERCEL_PROJECT_ID`.
+
+2. **Create a Vercel token** at [vercel.com/account/tokens](https://vercel.com/account/tokens).
+
+3. **Add GitHub Actions secrets** (`Settings → Secrets and variables → Actions`):
+
+   | Secret | Value |
+   |--------|--------|
+   | `VERCEL_TOKEN` | Token from step 2 |
+   | `VERCEL_ORG_ID` | `orgId` from `.vercel/project.json` |
+   | `VERCEL_PROJECT_ID` | `projectId` from `.vercel/project.json` |
+
+4. **Set app env vars on the Vercel project** (Production): same as local — `DATABASE_URL`, Clerk keys, `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, Cloudinary `NEXT_PUBLIC_*`, `APP_URL` (your production URL). Ensure Postgres has `pgvector`; run `npm run db:push` against prod once.
+
+5. **Push to `main`** (or run **Deploy to Vercel** via Actions → Run workflow). The job logs print the production URL.
 
 ### Option C — Railway / Render / Docker
 
