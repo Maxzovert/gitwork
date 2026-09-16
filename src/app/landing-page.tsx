@@ -6,10 +6,13 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ArrowRight, Menu, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GitworkLogo } from "@/components/gitwork-logo";
+import { cn } from "@/lib/utils";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
+
+const HERO_DEMO_VIDEO = "/landing/final-saas.mp4";
 
 /** Outer-gutter placements only (2xl+). Sparse — one accent per side max. */
 function LandingFloat({
@@ -41,7 +44,7 @@ function LandingFloat({
             alt=""
             width={renderWidth}
             height={renderHeight}
-            className="select-none object-contain"
+            className="object-contain select-none"
           />
         </div>
       ) : (
@@ -252,8 +255,22 @@ function OutlineButton({
 
 export default function LandingPage() {
   const root = useRef<HTMLDivElement>(null);
+  const heroVideoRef = useRef<HTMLVideoElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeStory, setActiveStory] = useState(0);
+  const [heroHovered, setHeroHovered] = useState(false);
+
+  useEffect(() => {
+    const video = heroVideoRef.current;
+    if (!video) return;
+    video.muted = true;
+    const play = video.play();
+    if (play && typeof play.catch === "function") {
+      play.catch(() => {
+        // Autoplay can be blocked; muted + playsInline usually works.
+      });
+    }
+  }, []);
 
   useGSAP(
     () => {
@@ -285,18 +302,20 @@ export default function LandingPage() {
           "-=0.55",
         );
 
-      gsap.utils.toArray<HTMLElement>("[data-landing-float]").forEach((el, i) => {
-        gsap.to(el, {
-          y: i % 2 === 0 ? -6 : 5,
-          x: i % 3 === 0 ? 2 : -2,
-          rotation: `+=${i % 2 === 0 ? 1.2 : -1.2}`,
-          repeat: -1,
-          yoyo: true,
-          duration: 4 + (i % 5) * 0.35,
-          ease: "sine.inOut",
-          delay: i * 0.08,
+      gsap.utils
+        .toArray<HTMLElement>("[data-landing-float]")
+        .forEach((el, i) => {
+          gsap.to(el, {
+            y: i % 2 === 0 ? -6 : 5,
+            x: i % 3 === 0 ? 2 : -2,
+            rotation: `+=${i % 2 === 0 ? 1.2 : -1.2}`,
+            repeat: -1,
+            yoyo: true,
+            duration: 4 + (i % 5) * 0.35,
+            ease: "sine.inOut",
+            delay: i * 0.08,
+          });
         });
-      });
 
       /* Continuous scrub — tracks scroll both ways */
       gsap.fromTo(
@@ -364,8 +383,7 @@ export default function LandingPage() {
       gsap.fromTo(
         orbitPaths,
         {
-          strokeDashoffset: (_i, el) =>
-            (el as SVGPathElement).getTotalLength(),
+          strokeDashoffset: (_i, el) => (el as SVGPathElement).getTotalLength(),
         },
         {
           strokeDashoffset: 0,
@@ -387,33 +405,22 @@ export default function LandingPage() {
         { start: "top 80%", stagger: 0.15, duration: 0.85 },
       );
 
-      reveal(
-        "[data-svc-head]",
-        { y: 28, opacity: 0 },
-        "[data-constellation]",
-        { start: "top 80%" },
-      );
+      reveal("[data-svc-head]", { y: 28, opacity: 0 }, "[data-constellation]", {
+        start: "top 80%",
+      });
 
-      reveal(
-        "[data-story-card]",
-        { y: 40, opacity: 0 },
-        "[data-story-grid]",
-        { stagger: 0.12 },
-      );
+      reveal("[data-story-card]", { y: 40, opacity: 0 }, "[data-story-grid]", {
+        stagger: 0.12,
+      });
 
-      reveal(
-        "[data-step]",
-        { y: 40, opacity: 0 },
-        "[data-steps]",
-        { start: "top 75%", stagger: 0.12 },
-      );
+      reveal("[data-step]", { y: 40, opacity: 0 }, "[data-steps]", {
+        start: "top 75%",
+        stagger: 0.12,
+      });
 
-      reveal(
-        "[data-audience-card]",
-        { y: 36, opacity: 0 },
-        "[data-audience]",
-        { stagger: 0.12 },
-      );
+      reveal("[data-audience-card]", { y: 36, opacity: 0 }, "[data-audience]", {
+        stagger: 0.12,
+      });
 
       reveal(
         "[data-cta-block] > *",
@@ -426,7 +433,10 @@ export default function LandingPage() {
   );
 
   return (
-    <div ref={root} className="relative overflow-x-hidden bg-[#f3f0ee] text-[#141413]">
+    <div
+      ref={root}
+      className="relative overflow-x-hidden bg-[#f3f0ee] text-[#141413]"
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -440,7 +450,7 @@ export default function LandingPage() {
       <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-6">
         <header
           data-nav
-          className="pointer-events-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-full bg-white/95 px-5 py-3 shadow-nav backdrop-blur-md sm:px-8 sm:py-4"
+          className="shadow-nav pointer-events-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-full bg-white/95 px-5 py-3 backdrop-blur-md sm:px-8 sm:py-4"
         >
           <Link href="/" className="flex shrink-0 items-center">
             <GitworkLogo size={28} withWordmark />
@@ -483,7 +493,11 @@ export default function LandingPage() {
               onClick={() => setMenuOpen((v) => !v)}
               aria-label="Menu"
             >
-              {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+              {menuOpen ? (
+                <X className="size-5" />
+              ) : (
+                <Menu className="size-5" />
+              )}
             </button>
           </div>
         </header>
@@ -512,26 +526,26 @@ export default function LandingPage() {
       {/* Hero */}
       <section
         data-hero
-        className="relative mx-auto max-w-[1280px] overflow-visible px-6 pb-16 pt-28 sm:px-10 sm:pt-32 lg:px-12"
+        className="relative mx-auto max-w-[1280px] overflow-visible px-6 pt-28 pb-16 sm:px-10 sm:pt-32 lg:px-12"
       >
         <LandingFloat
           src="/decorative/git-branch.svg"
           kind="svg"
-          className="-left-20 top-40 rotate-[-8deg] xl:-left-28"
+          className="top-40 -left-20 rotate-[-8deg] xl:-left-28"
           width={52}
           height={70}
         />
         <LandingFloat
           src="/decorative/network-nodes.svg"
           kind="svg"
-          className="-right-20 top-44 rotate-[7deg] xl:-right-28"
+          className="top-44 -right-20 rotate-[7deg] xl:-right-28"
           width={72}
           height={60}
         />
         <LandingFloat
           src="/onboarding/github-logo.png"
           kind="logo"
-          className="-left-16 bottom-36 rotate-[-5deg] xl:-left-24"
+          className="bottom-36 -left-16 rotate-[-5deg] xl:-left-24"
           width={40}
           height={40}
         />
@@ -556,7 +570,7 @@ export default function LandingPage() {
             </h1>
           </div>
           <div data-hero-el className="max-w-md">
-            <p className="text-base font-[450] leading-[1.4] text-[#141413]">
+            <p className="text-base leading-[1.4] font-[450] text-[#141413]">
               Ask the codebase. Capture meetings. Read commit history in plain
               language. Generate repository overviews, review PR risk, and turn
               Git tags into draft releases from the same shared workspace.
@@ -571,26 +585,59 @@ export default function LandingPage() {
         <div
           data-hero-el
           data-hero-frame
-          className="shadow-lift relative z-10 mt-12 overflow-hidden rounded-[40px] bg-[#2b2b2b] will-change-transform"
+          className="shadow-lift relative z-10 mt-12 cursor-pointer overflow-hidden rounded-[40px] bg-[#2b2b2b] will-change-transform"
           style={{ height: "min(62vh, 560px)" }}
+          onPointerEnter={() => setHeroHovered(true)}
+          onPointerLeave={() => setHeroHovered(false)}
         >
+          <video
+            ref={heroVideoRef}
+            className={cn(
+              "pointer-events-none absolute inset-0 z-0 h-full w-full object-cover transition-transform duration-700 ease-out",
+              heroHovered ? "scale-100" : "scale-105",
+            )}
+            src={HERO_DEMO_VIDEO}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            aria-label="Gitwork product demo"
+          />
+          <p className="pointer-events-none absolute top-5 left-5 z-[1] max-w-[16rem] rounded-full border border-white/10 bg-[#141413]/55 px-3 py-1.5 text-[11px] leading-snug font-medium tracking-[-0.01em] text-white/85 sm:top-6 sm:left-6 sm:max-w-none sm:text-xs">
+            Note: video is AI generated — will be enhanced soon
+          </p>
+          {/* Frosted veil sits above the note so both look blurred until hover */}
           <div
             aria-hidden
-            className="absolute inset-0 opacity-80"
-            style={{
-              background:
-                "radial-gradient(ellipse at 30% 40%, #cf450033, transparent 55%), radial-gradient(ellipse at 80% 70%, #3860be44, transparent 50%), linear-gradient(160deg, #262627, #141413)",
-            }}
+            className={cn(
+              "pointer-events-none absolute inset-0 z-[2] bg-[#141413]/25 backdrop-blur-md transition-opacity duration-500 ease-out",
+              heroHovered ? "opacity-0" : "opacity-100",
+            )}
           />
-          <div className="relative flex h-full flex-col justify-end p-8 sm:p-12">
-            <p className="max-w-sm text-sm font-[450] leading-relaxed text-white/70">
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-0 z-[2] bg-gradient-to-t from-[#141413]/55 via-transparent to-[#141413]/10 transition-opacity duration-500",
+              heroHovered ? "opacity-30" : "opacity-100",
+            )}
+          />
+          <div
+            className={cn(
+              "relative z-[3] flex h-full flex-col justify-end p-8 transition-opacity duration-500 sm:p-12",
+              heroHovered
+                ? "pointer-events-none opacity-0"
+                : "pointer-events-auto opacity-100",
+            )}
+          >
+            <p className="max-w-sm text-sm leading-relaxed font-[450] text-white drop-shadow">
               One workspace for questions, meetings, and commit stories around
               every linked repository.
             </p>
             <div className="mt-6">
               <Link
                 href="/sign-up"
-                className="inline-flex items-center justify-center rounded-[40px] bg-[#141413] px-10 py-4 text-base font-medium tracking-[-0.02em] text-[#f3f0ee]"
+                className="inline-flex items-center justify-center rounded-[40px] border border-white/15 bg-[#141413]/90 px-10 py-4 text-base font-medium tracking-[-0.02em] text-[#f3f0ee] backdrop-blur-sm"
               >
                 Discover Gitwork
               </Link>
@@ -607,7 +654,7 @@ export default function LandingPage() {
         <LandingFloat
           src="/decorative/merge-nodes.svg"
           kind="svg"
-          className="-left-20 top-20 rotate-[-6deg] xl:-left-28"
+          className="top-20 -left-20 rotate-[-6deg] xl:-left-28"
           width={64}
           height={56}
         />
@@ -631,10 +678,10 @@ export default function LandingPage() {
           </h2>
           <p
             data-reveal
-            className="mx-auto mt-5 max-w-2xl text-base font-[450] leading-[1.5] text-[#696969]"
+            className="mx-auto mt-5 max-w-2xl text-base leading-[1.5] font-[450] text-[#696969]"
           >
-            Faster onboarding, branch-aware answers, safer credentials, and
-            less manual work from pull request review through release day.
+            Faster onboarding, branch-aware answers, safer credentials, and less
+            manual work from pull request review through release day.
           </p>
         </div>
 
@@ -651,7 +698,7 @@ export default function LandingPage() {
               <h3 className="font-display mt-5 text-[28px] leading-[1.15] tracking-[-0.02em] text-[#141413]">
                 {feature.title}
               </h3>
-              <p className="mt-3 text-base font-[450] leading-[1.5] text-[#696969]">
+              <p className="mt-3 text-base leading-[1.5] font-[450] text-[#696969]">
                 {feature.body}
               </p>
               <Link
@@ -674,7 +721,7 @@ export default function LandingPage() {
         <LandingFloat
           src="/onboarding/zoom-logo.png"
           kind="logo"
-          className="-left-20 top-28 rotate-[4deg] xl:-left-28"
+          className="top-28 -left-20 rotate-[4deg] xl:-left-28"
           width={56}
           height={28}
         />
@@ -687,32 +734,33 @@ export default function LandingPage() {
         />
 
         <div className="relative z-10">
-        <Eyebrow>
-          <span data-reveal>The quiet problem</span>
-        </Eyebrow>
-        <div className="mt-6 grid gap-10 lg:grid-cols-2 lg:gap-20">
-          <h2
-            data-reveal
-            className="font-display text-[36px] leading-[44px] tracking-[-0.02em]"
-          >
-            Code moves fast. Context gets lost between GitHub, chat, and calls.
-          </h2>
-          <div
-            data-reveal
-            className="space-y-5 text-base font-[450] leading-[1.4] text-[#696969]"
-          >
-            <p>
-              New contributors spend days asking where things live. Seniors
-              answer the same questions because the map of the repo only lives
-              in people&apos;s heads.
-            </p>
-            <p>
-              Meeting notes scatter across docs. Decisions made on a call never
-              find their way back to the project. Commit history stays dense
-              when you only need the story.
-            </p>
+          <Eyebrow>
+            <span data-reveal>The quiet problem</span>
+          </Eyebrow>
+          <div className="mt-6 grid gap-10 lg:grid-cols-2 lg:gap-20">
+            <h2
+              data-reveal
+              className="font-display text-[36px] leading-[44px] tracking-[-0.02em]"
+            >
+              Code moves fast. Context gets lost between GitHub, chat, and
+              calls.
+            </h2>
+            <div
+              data-reveal
+              className="space-y-5 text-base leading-[1.4] font-[450] text-[#696969]"
+            >
+              <p>
+                New contributors spend days asking where things live. Seniors
+                answer the same questions because the map of the repo only lives
+                in people&apos;s heads.
+              </p>
+              <p>
+                Meeting notes scatter across docs. Decisions made on a call
+                never find their way back to the project. Commit history stays
+                dense when you only need the story.
+              </p>
+            </div>
           </div>
-        </div>
         </div>
       </section>
 
@@ -725,7 +773,7 @@ export default function LandingPage() {
         <LandingFloat
           src="/decorative/code-braces.svg"
           kind="svg"
-          className="left-8 top-32 rotate-[-5deg] xl:left-14"
+          className="top-32 left-8 rotate-[-5deg] xl:left-14"
           width={48}
           height={48}
         />
@@ -740,7 +788,7 @@ export default function LandingPage() {
         <div className="relative z-10 mx-auto max-w-[1280px] px-6 sm:px-10 lg:px-12">
           <p
             aria-hidden
-            className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+            className="font-display pointer-events-none mb-2 text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
           >
             Product
           </p>
@@ -829,12 +877,12 @@ export default function LandingPage() {
       <section
         id="story"
         data-reveal-section
-        className="scroll-mt-28 relative mx-auto max-w-[1280px] overflow-visible px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
+        className="relative mx-auto max-w-[1280px] scroll-mt-28 overflow-visible px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
         <LandingFloat
           src="/decorative/angle-brackets.svg"
           kind="svg"
-          className="-left-20 top-36 rotate-[6deg] xl:-left-28"
+          className="top-36 -left-20 rotate-[6deg] xl:-left-28"
           width={48}
           height={48}
         />
@@ -847,62 +895,62 @@ export default function LandingPage() {
         />
 
         <div className="relative z-10">
-        <p
-          aria-hidden
-          className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
-        >
-          Story
-        </p>
-        <Eyebrow>
-          <span data-reveal>The story</span>
-        </Eyebrow>
-        <h2
-          data-reveal
-          className="font-display mt-4 max-w-2xl text-[36px] leading-[44px] tracking-[-0.02em]"
-        >
-          From empty account to a workspace that remembers your repo
-        </h2>
+          <p
+            aria-hidden
+            className="font-display pointer-events-none mb-2 text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+          >
+            Story
+          </p>
+          <Eyebrow>
+            <span data-reveal>The story</span>
+          </Eyebrow>
+          <h2
+            data-reveal
+            className="font-display mt-4 max-w-2xl text-[36px] leading-[44px] tracking-[-0.02em]"
+          >
+            From empty account to a workspace that remembers your repo
+          </h2>
 
-        <div
-          data-story-grid
-          className="mt-16 grid gap-6 md:grid-cols-3 md:gap-8"
-        >
-          {storyCards.map((card, i) => {
-            const active = activeStory === i;
-            return (
-              <article
-                key={card.id}
-                data-story-card
-                onMouseEnter={() => setActiveStory(i)}
-                onFocusCapture={() => setActiveStory(i)}
-                className={`group rounded-[40px] border transition-all duration-300 ${
-                  active
-                    ? "scale-[1.02] border-[#141413] bg-white shadow-[rgba(0,0,0,0.08)_0px_24px_48px]"
-                    : "border-transparent bg-[#fcfbfa] hover:border-[#141413]/20"
-                }`}
-              >
-                <div className="flex h-full flex-col p-8 sm:p-9">
-                  <span className="inline-flex w-fit rounded-full bg-[#f3f0ee] px-4 py-2 text-sm font-medium tracking-[-0.02em] text-[#141413]">
-                    {card.chip}
-                  </span>
-                  <h3 className="font-display mt-6 text-2xl leading-[1.2] tracking-[-0.02em]">
-                    {card.title}
-                  </h3>
-                  <p className="mt-3 flex-1 text-base font-[450] leading-[1.4] text-[#696969]">
-                    {card.body}
-                  </p>
-                  <Link
-                    href={card.href}
-                    className="mt-8 inline-flex items-center gap-2 text-base font-medium tracking-[-0.02em] text-[#141413] transition-transform group-hover:translate-x-1"
-                  >
-                    Try it
-                    <ArrowRight className="size-4" />
-                  </Link>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+          <div
+            data-story-grid
+            className="mt-16 grid gap-6 md:grid-cols-3 md:gap-8"
+          >
+            {storyCards.map((card, i) => {
+              const active = activeStory === i;
+              return (
+                <article
+                  key={card.id}
+                  data-story-card
+                  onMouseEnter={() => setActiveStory(i)}
+                  onFocusCapture={() => setActiveStory(i)}
+                  className={`group rounded-[40px] border transition-all duration-300 ${
+                    active
+                      ? "scale-[1.02] border-[#141413] bg-white shadow-[rgba(0,0,0,0.08)_0px_24px_48px]"
+                      : "border-transparent bg-[#fcfbfa] hover:border-[#141413]/20"
+                  }`}
+                >
+                  <div className="flex h-full flex-col p-8 sm:p-9">
+                    <span className="inline-flex w-fit rounded-full bg-[#f3f0ee] px-4 py-2 text-sm font-medium tracking-[-0.02em] text-[#141413]">
+                      {card.chip}
+                    </span>
+                    <h3 className="font-display mt-6 text-2xl leading-[1.2] tracking-[-0.02em]">
+                      {card.title}
+                    </h3>
+                    <p className="mt-3 flex-1 text-base leading-[1.4] font-[450] text-[#696969]">
+                      {card.body}
+                    </p>
+                    <Link
+                      href={card.href}
+                      className="mt-8 inline-flex items-center gap-2 text-base font-medium tracking-[-0.02em] text-[#141413] transition-transform group-hover:translate-x-1"
+                    >
+                      Try it
+                      <ArrowRight className="size-4" />
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -910,12 +958,12 @@ export default function LandingPage() {
       <section
         id="how"
         data-steps
-        className="scroll-mt-28 relative overflow-hidden bg-[#fcfbfa] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
+        className="relative scroll-mt-28 overflow-hidden bg-[#fcfbfa] px-6 py-24 sm:px-10 lg:px-12 lg:py-32"
       >
         <LandingFloat
           src="/onboarding/github-logo.png"
           kind="logo"
-          className="left-8 top-40 rotate-[-5deg] xl:left-14"
+          className="top-40 left-8 rotate-[-5deg] xl:left-14"
           width={40}
           height={40}
         />
@@ -930,7 +978,7 @@ export default function LandingPage() {
         <div className="relative z-10 mx-auto max-w-[1280px]">
           <p
             aria-hidden
-            className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+            className="font-display pointer-events-none mb-2 text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
           >
             How it works
           </p>
@@ -952,7 +1000,7 @@ export default function LandingPage() {
                 <h3 className="font-display mt-4 text-2xl leading-[1.2] tracking-[-0.02em]">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-base font-[450] leading-[1.4] text-[#696969]">
+                <p className="mt-3 text-base leading-[1.4] font-[450] text-[#696969]">
                   {step.body}
                 </p>
               </li>
@@ -969,7 +1017,7 @@ export default function LandingPage() {
         <LandingFloat
           src="/decorative/chat-bubble.svg"
           kind="svg"
-          className="-left-20 top-32 rotate-[5deg] xl:-left-28"
+          className="top-32 -left-20 rotate-[5deg] xl:-left-28"
           width={52}
           height={52}
         />
@@ -982,38 +1030,38 @@ export default function LandingPage() {
         />
 
         <div className="relative z-10">
-        <p
-          aria-hidden
-          className="pointer-events-none mb-2 font-display text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
-        >
-          Who it helps
-        </p>
-        <Eyebrow>
-          <span>Audience</span>
-        </Eyebrow>
-        <h2 className="font-display mt-4 max-w-2xl text-[36px] leading-[44px] tracking-[-0.02em]">
-          Small teams and solo builders who live in GitHub
-        </h2>
-        <div className="mt-14 grid gap-6 md:grid-cols-3 md:gap-8">
-          {audience.map((item) => (
-            <Link
-              key={item.t}
-              href="/sign-up"
-              data-audience-card
-              className="group rounded-[40px] border border-transparent bg-white p-8 shadow-[rgba(0,0,0,0.04)_0px_4px_24px] transition-all duration-300 hover:-translate-y-1 hover:border-[#141413]/15 hover:shadow-[rgba(0,0,0,0.08)_0px_24px_48px] sm:p-9"
-            >
-              <h3 className="font-display text-2xl tracking-[-0.02em]">
-                {item.t}
-              </h3>
-              <p className="mt-3 text-base font-[450] leading-[1.4] text-[#696969]">
-                {item.b}
-              </p>
-              <span className="mt-8 inline-flex size-12 items-center justify-center rounded-full bg-[#f3f0ee] transition-transform group-hover:translate-x-1 group-hover:bg-[#141413] group-hover:text-[#f3f0ee]">
-                <ArrowRight className="size-5" />
-              </span>
-            </Link>
-          ))}
-        </div>
+          <p
+            aria-hidden
+            className="font-display pointer-events-none mb-2 text-[64px] leading-none tracking-[-0.02em] text-[#e8e2da] select-none sm:text-[80px] lg:text-[112px]"
+          >
+            Who it helps
+          </p>
+          <Eyebrow>
+            <span>Audience</span>
+          </Eyebrow>
+          <h2 className="font-display mt-4 max-w-2xl text-[36px] leading-[44px] tracking-[-0.02em]">
+            Small teams and solo builders who live in GitHub
+          </h2>
+          <div className="mt-14 grid gap-6 md:grid-cols-3 md:gap-8">
+            {audience.map((item) => (
+              <Link
+                key={item.t}
+                href="/sign-up"
+                data-audience-card
+                className="group rounded-[40px] border border-transparent bg-white p-8 shadow-[rgba(0,0,0,0.04)_0px_4px_24px] transition-all duration-300 hover:-translate-y-1 hover:border-[#141413]/15 hover:shadow-[rgba(0,0,0,0.08)_0px_24px_48px] sm:p-9"
+              >
+                <h3 className="font-display text-2xl tracking-[-0.02em]">
+                  {item.t}
+                </h3>
+                <p className="mt-3 text-base leading-[1.4] font-[450] text-[#696969]">
+                  {item.b}
+                </p>
+                <span className="mt-8 inline-flex size-12 items-center justify-center rounded-full bg-[#f3f0ee] transition-transform group-hover:translate-x-1 group-hover:bg-[#141413] group-hover:text-[#f3f0ee]">
+                  <ArrowRight className="size-5" />
+                </span>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -1022,7 +1070,7 @@ export default function LandingPage() {
         <LandingFloat
           src="/decorative/timeline.svg"
           kind="svg"
-          className="left-4 top-10 rotate-[-6deg] xl:left-10"
+          className="top-10 left-4 rotate-[-6deg] xl:left-10"
           width={48}
           height={48}
         />
@@ -1041,7 +1089,7 @@ export default function LandingPage() {
           <h2 className="font-display max-w-xl text-[36px] leading-[44px] tracking-[-0.02em] sm:text-[48px] sm:leading-[1.05]">
             We&apos;re ready when your next repo is
           </h2>
-          <p className="mt-5 max-w-lg text-base font-[450] leading-[1.4] text-[#d1cdc7]">
+          <p className="mt-5 max-w-lg text-base leading-[1.4] font-[450] text-[#d1cdc7]">
             Create an account, link a GitHub project, and start asking questions
             in a few minutes. No setup tour required.
           </p>

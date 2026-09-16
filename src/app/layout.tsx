@@ -23,17 +23,17 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider
-      signInFallbackRedirectUrl="/sync-user"
-      signUpFallbackRedirectUrl="/sync-user"
-      afterSignOutUrl="/"
-    >
-      <html lang="en" className={sofia.variable} suppressHydrationWarning>
-        <body className="min-h-screen font-sans antialiased" suppressHydrationWarning>
+    <html lang="en" className={sofia.variable} suppressHydrationWarning>
+      <body className="min-h-screen font-sans antialiased" suppressHydrationWarning>
+        <ClerkProvider
+          signInFallbackRedirectUrl="/sync-user"
+          signUpFallbackRedirectUrl="/sync-user"
+          afterSignOutUrl="/"
+        >
           <TRPCReactProvider>{children}</TRPCReactProvider>
           <Toaster richColors position="bottom-right" />
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }
