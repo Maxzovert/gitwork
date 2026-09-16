@@ -13,6 +13,8 @@ export const env = createEnv({
       .default("development"),
     APP_URL: z.string().url().optional(),
     GITHUB_TOKEN: z.string().optional(),
+    /** 64-char hex (32 bytes) used for AES-256-GCM of user API tokens */
+    TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
   },
 
   /**
@@ -33,6 +35,7 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     APP_URL: process.env.APP_URL,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

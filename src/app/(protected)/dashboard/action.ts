@@ -18,7 +18,10 @@ type SourceMatch = {
   summary: string;
 };
 
-async function getProjectBranch(projectId: string) {
+async function getProjectBranch(projectId: string, branchOverride?: string | null) {
+  if (branchOverride?.trim()) {
+    return branchOverride.trim();
+  }
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: {
@@ -119,9 +122,13 @@ function mergeUnique(primary: SourceMatch[], secondary: SourceMatch[], limit = 1
   return out;
 }
 
-async function searchByKeywords(projectId: string, terms: string[]) {
+async function searchByKeywords(
+  projectId: string,
+  terms: string[],
+  branch?: string | null,
+) {
   if (!terms.length) return [] as SourceMatch[];
-  const branch = await getProjectBranch(projectId);
+  const resolvedBranch = await getProjectBranch(projectId, branch);
 
   const rows: SourceMatch[] = [];
   for (const term of terms) {
@@ -141,15 +148,19 @@ async function searchByKeywords(projectId: string, terms: string[]) {
       `,
       projectId,
       pattern,
-      branch,
+      resolvedBranch,
     )) as SourceMatch[];
     rows.push(...hits);
   }
   return mergeUnique(rows, [], 10);
 }
 
-async function searchByVector(projectId: string, vectorQuery: string) {
-  const branch = await getProjectBranch(projectId);
+async function searchByVector(
+  projectId: string,
+  vectorQuery: string,
+  branch?: string | null,
+) {
+  const resolvedBranch = await getProjectBranch(projectId, branch);
   return (await db.$queryRawUnsafe(
     `
     SELECT "filename", "sourcecode", "summary"
@@ -162,7 +173,7 @@ async function searchByVector(projectId: string, vectorQuery: string) {
     `,
     projectId,
     vectorQuery,
-    branch,
+    resolvedBranch,
   )) as SourceMatch[];
 }
 
@@ -171,11 +182,12 @@ async function searchSimilarFiles(
   projectId: string,
   question: string,
   vectorQuery: string,
+  branch?: string | null,
 ) {
   const terms = extractSearchTerms(question);
   const [keywordHits, vectorHits] = await Promise.all([
-    searchByKeywords(projectId, terms),
-    searchByVector(projectId, vectorQuery),
+    searchByKeywords(projectId, terms, branch),
+    searchByVector(projectId, vectorQuery, branch),
   ]);
 
   console.log(
@@ -185,7 +197,11 @@ async function searchSimilarFiles(
   return mergeUnique(keywordHits, vectorHits, 10);
 }
 
-export async function askQuestion(question: string, projectId: string) {
+export async function askQuestion(
+  question: string,
+  projectId: string,
+  branch?: string | null,
+) {
   const { userId } = await auth();
   if (!userId) {
     throw new Error("Unauthorized");
@@ -207,13 +223,23 @@ export async function askQuestion(question: string, projectId: string) {
   const queryVector = await generateEmbeddings(question);
   const vectorQuery = `[${queryVector.join(",")}]`;
 
-  let result = await searchSimilarFiles(projectId, question, vectorQuery);
+  let result = await searchSimilarFiles(
+    projectId,
+    question,
+    vectorQuery,
+    branch,
+  );
 
   // Existing rows often have NULL vectors from the broken write path — repair once
   if (!result.length) {
     const filled = await backfillNullEmbeddings(projectId);
     if (filled > 0) {
-      result = await searchSimilarFiles(projectId, question, vectorQuery);
+      result = await searchSimilarFiles(
+        projectId,
+        question,
+        vectorQuery,
+        branch,
+      );
     }
   }
 

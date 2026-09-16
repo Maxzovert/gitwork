@@ -49,7 +49,7 @@ function userDisplayName(user: {
 }
 
 const QAPage = () => {
-  const { projectId } = useProjects();
+  const { projectId, project } = useProjects();
   const { data: questions, isLoading } = api.project.getQuestions.useQuery(
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
@@ -150,6 +150,10 @@ const QAPage = () => {
                   </h3>
                   <FileReferences
                     files={parseFileReferences(selectedQuestion.fileReference)}
+                    githubUrl={project?.githubUrl}
+                    branch={
+                      project?.activeBranch ?? project?.defaultBranch ?? null
+                    }
                   />
                 </section>
               </div>

@@ -1,19 +1,23 @@
 # Gitwork
 
-AI workspace for GitHub teams. Connect a repository once, then ask the codebase questions, skim AI commit summaries, turn meeting audio into issue drafts, and generate PR review digests — all in one place.
+AI workspace for GitHub teams. Connect a repository once, then ask branch-aware codebase questions, generate a beginner-friendly project overview, skim AI commit summaries, turn meeting audio into GitHub issues, review PR risk, and draft releases — all in one place.
 
 ## Features
 
 | Feature | What it does |
 |---------|----------------|
 | **Codebase Q&A** | Indexes repo files into embeddings and answers with file-grounded context (RAG + Gemini) |
-| **Commit timeline** | Pulls recent commits, summarizes diffs in plain language, optional live sync via GitHub webhooks |
-| **Meetings → issues** | Upload meeting audio (Cloudinary + AssemblyAI), get chapter-style issue drafts |
+| **Branch-aware indexing** | Switches repository branches, keeps embeddings isolated by branch, and automatically indexes missing branch context |
+| **Project overview** | Generates a plain-language repository brief, folder map, setup guidance, and recommended starting files |
+| **Commit timeline** | Pulls recent commits, summarizes diffs in plain language, and stays current through GitHub push webhooks |
+| **Meetings → issues** | Uploads meeting audio (Cloudinary + AssemblyAI), creates chapter-style issue drafts, and can publish them to GitHub |
 | **PR / review digests** | On-demand digest of open PRs, risk areas, and what changed in the last 7 days |
+| **Release drafting** | Compares Git tags or an active branch, generates editable changelog notes, and creates draft GitHub Releases |
 | **Team workspace** | Invite links, owner/member roles, shared project context |
-| **GitHub OAuth** | Authorize once via Clerk — no personal access tokens pasted or stored in the DB |
+| **Account settings** | Notification preferences plus AES-256-GCM encrypted API-token storage with a GitHub PAT fallback |
+| **GitHub access** | Authorize once via Clerk OAuth, or optionally store a personal access token encrypted as a fallback |
 
-Sign in can use **Google** (or other Clerk providers). Creating and indexing repos still requires a one-time **Connect GitHub** step so Gitwork can read repositories.
+Sign in can use **Google** (or other Clerk providers). Creating and indexing repos still requires a one-time **Connect GitHub** step so Gitwork can read repositories. If Clerk OAuth is unavailable, users can optionally store an encrypted GitHub PAT in Settings.
 
 ## Stack
 
@@ -34,10 +38,13 @@ Sign in can use **Google** (or other Clerk providers). Creating and indexing rep
 | `/sync-user` | Sync Clerk user into the database |
 | `/create` | Guided project onboarding (Connect GitHub → pick repo → index) |
 | `/dashboard` | Project home + commit log |
+| `/overview` | Generated beginner briefing and repository map |
 | `/qa` | Codebase Q&A history |
 | `/meetings`, `/meetings/[id]` | Meeting uploads and issue chapters |
 | `/pr-digests` | PR review digests |
+| `/releases` | Changelog generation and draft GitHub Releases |
 | `/team` | Members + invite links |
+| `/settings` | Notifications and encrypted API tokens |
 | `/invite/[token]` | Accept a project invite |
 
 ## Getting started
@@ -83,6 +90,7 @@ cp .env.example .env
 | `NEXT_PUBLIC_CLOUDINARY_FOLDER` | Optional | e.g. `gitwork` |
 | `APP_URL` | Yes for webhooks | Public app URL (`http://localhost:3000` locally; use ngrok in dev for webhooks) |
 | `GITHUB_TOKEN` | Optional | Server-side PAT fallback for local/dev only |
+| `TOKEN_ENCRYPTION_KEY` | Required for stored tokens | 32-byte key or 64-character hex key used for AES-256-GCM encryption |
 | `SKIP_ENV_VALIDATION` | Optional | Set to skip `@t3-oss/env` validation (Docker/CI) |
 
 AI keys stay on the server (not per-user). GitHub access prefers **Clerk OAuth**, not a shared PAT.
@@ -149,7 +157,7 @@ Also enable **Google** (or other providers) if you want non-GitHub login. Users 
 | Connected but missing `repo` | **Re-authorize for more scopes** (`externalAccount.reauthorize`) |
 | Already connected | Shows connected status; user picks a repo and continues |
 
-Server-side, Gitwork loads the token with Clerk `getUserOauthAccessToken` and uses it for indexing, commits, PR digests, and webhooks. The token is never returned to the client.
+Server-side, Gitwork loads the token with Clerk `getUserOauthAccessToken` and uses it for indexing, commits, PR digests, releases, issues, and webhooks. The token is never returned to the client. An encrypted per-user GitHub PAT from `/settings` is used only as a fallback.
 
 ## How the product works
 
@@ -160,17 +168,20 @@ Create project → pick repo + branch
         ↓
 Index source files → embeddings (pgvector)
         ↓
-┌─────────────┬──────────────┬───────────────┬─────────────┐
-│  Ask Q&A    │ Commit sync  │ Meeting audio │ PR digests  │
-│  (RAG)      │ + webhooks   │ → chapters    │ (7-day)     │
-└─────────────┴──────────────┴───────────────┴─────────────┘
+┌──────────────┬──────────────┬───────────────┬─────────────┐
+│ Q&A + map    │ Commit sync  │ Meeting audio │ PR + release│
+│ (branch RAG) │ + webhooks   │ → issues      │ workflows   │
+└──────────────┴──────────────┴───────────────┴─────────────┘
 ```
 
 - **Indexing:** loads a capped set of source files from the selected branch, summarizes + embeds them.
-- **Q&A:** retrieves relevant chunks, answers with Gemini, can save answers per project.
+- **Q&A:** retrieves relevant chunks from the selected branch, streams a Gemini answer with file references, and saves answers per project.
+- **Overview:** combines repository docs, an embedding-derived folder sketch, and recent context into a saved onboarding brief.
 - **Commits:** backfill on create; webhook keeps the timeline updated when configured (`APP_URL` must be publicly reachable).
-- **Meetings:** upload audio → AssemblyAI → structured chapters shown as issue-like cards.
+- **Meetings:** upload audio → AssemblyAI → structured chapters that can be published as GitHub Issues.
 - **PR digests:** live GitHub data + AI summary / risk callouts. Spec: [README-pr-review-digests.md](./README-pr-review-digests.md).
+- **Releases:** compare Git refs → Gemini changelog → editable draft → draft GitHub Release.
+- **Settings:** stores notification preferences and encrypts user-supplied API tokens before persistence.
 
 ## Project structure (high level)
 
@@ -188,7 +199,7 @@ prisma/
 
 ### Environment on the host
 
-Set the same variables as local (Clerk, `DATABASE_URL`, Gemini, Assembly, Cloudinary, `APP_URL`).  
+Set the same variables as local (Clerk, `DATABASE_URL`, Gemini, Assembly, Cloudinary, `APP_URL`, and `TOKEN_ENCRYPTION_KEY` when stored tokens are enabled).
 `GITHUB_TOKEN` is optional if every user connects GitHub OAuth.
 
 Update Clerk + GitHub OAuth **callback / homepage URLs** for production. Point `APP_URL` at your public URL so webhooks work.
@@ -241,7 +252,7 @@ Any Node host that can run `npm run build` + `npm run start` works. Docker helps
 
 ## Roadmap
 
-Ideas and priorities live in [feature.md](./feature.md) (GitHub Issue export from meetings, metering, multi-turn Q&A, architecture map, Slack digests, etc.).
+Shipped capabilities and upcoming priorities live in [feature.md](./feature.md) (incremental indexing, metering, multi-turn Q&A, architecture maps, Slack digests, etc.).
 
 PR digest product spec: [README-pr-review-digests.md](./README-pr-review-digests.md).
 
@@ -255,7 +266,8 @@ PR digest product spec: [README-pr-review-digests.md](./README-pr-review-digests
 | Webhooks not firing | Set public `APP_URL` (ngrok in local dev); check webhook registration on the repo |
 | Meeting upload fails | Configure Cloudinary `NEXT_PUBLIC_*` vars |
 | Transcription fails | Check `ASSEMBLY_API_KEY` |
-| Q&A / digests empty or erroring | Check `GEMINI_API_KEY` and indexing job status |
+| Q&A / digests / release notes empty or erroring | Check `GEMINI_API_KEY`, GitHub authorization, and indexing status |
+| Saving an API token fails | Configure a stable `TOKEN_ENCRYPTION_KEY`; changing it makes existing encrypted tokens unreadable |
 | Vercel build retries / OOM | Raise `NODE_OPTIONS`, use Actions prebuilt deploy, Railway, or Docker |
 
 ## License

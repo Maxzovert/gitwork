@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <AuthShell subtitle="Create your workspace">
       <SignUp
-        forceRedirectUrl="/sync-user"
+        // fallback only — preserve redirect_url after sign-up when present
         fallbackRedirectUrl="/sync-user"
         signInUrl="/sign-in"
         appearance={clerkAppearance}

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, FileCode2 } from "lucide-react";
+import { Copy, ExternalLink, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { githubBlobUrl, parseGithubUrl } from "@/lib/github-url";
 
 export type FileReference = {
   filename: string;
@@ -51,7 +52,15 @@ function fileDir(path: string) {
   return parts.slice(0, -1).join("/");
 }
 
-export function FileReferences({ files }: { files: FileReference[] }) {
+export function FileReferences({
+  files,
+  githubUrl,
+  branch,
+}: {
+  files: FileReference[];
+  githubUrl?: string | null;
+  branch?: string | null;
+}) {
   const [active, setActive] = useState<string | null>(
     files[0]?.filename ?? null,
   );
@@ -65,6 +74,20 @@ export function FileReferences({ files }: { files: FileReference[] }) {
   }
 
   const selected = files.find((f) => f.filename === active) ?? files[0]!;
+
+  let blobUrl: string | null = null;
+  if (githubUrl) {
+    try {
+      const { cleaned } = parseGithubUrl(githubUrl);
+      blobUrl = githubBlobUrl(
+        cleaned,
+        branch?.trim() || "HEAD",
+        selected.filename,
+      );
+    } catch {
+      blobUrl = null;
+    }
+  }
 
   const copyCode = async () => {
     try {
@@ -154,16 +177,32 @@ export function FileReferences({ files }: { files: FileReference[] }) {
                 </p>
               ) : null}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 text-xs text-[#696969] hover:text-[#141413]"
-              onClick={copyCode}
-            >
-              <Copy className="size-3.5" />
-              Copy
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              {blobUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-[#696969] hover:text-[#141413]"
+                  asChild
+                >
+                  <a href={blobUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="size-3.5" />
+                    GitHub
+                  </a>
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-[#696969] hover:text-[#141413]"
+                onClick={copyCode}
+              >
+                <Copy className="size-3.5" />
+                Copy
+              </Button>
+            </div>
           </div>
           <pre className="max-h-64 overflow-auto bg-[#1a1918] p-3.5 font-mono text-[0.75rem] leading-5 text-[#f0ebe4]">
             <code className={`language-${languageFromFilename(selected.filename)}`}>

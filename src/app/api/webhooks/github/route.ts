@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { ingestPushCommits } from "@/lib/github";
+import { resolveProjectGithubToken } from "@/lib/github-auth";
+import { startIndexingJobIfIdle } from "@/lib/github-loader";
+import { branchFromPushRef } from "@/lib/github-url";
 import {
   findProjectForPush,
   verifyGithubWebhookSignature,
@@ -46,9 +49,28 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await ingestPushCommits(project.id, body.commits);
+
+    const pushedBranch = branchFromPushRef(body.ref);
+    const trackedBranch = project.activeBranch ?? project.defaultBranch;
+    let reindexed = false;
+
+    if (pushedBranch && trackedBranch && pushedBranch === trackedBranch) {
+      const githubToken = await resolveProjectGithubToken(project.id);
+      const job = await startIndexingJobIfIdle({
+        projectId: project.id,
+        githubUrl: project.githubUrl,
+        branch: pushedBranch,
+        githubToken: githubToken ?? undefined,
+        preserveActiveBranch: true,
+      });
+      reindexed = Boolean(job);
+    }
+
     return NextResponse.json({
       ok: true,
       ingested: result.count ?? body.commits.length,
+      reindexed,
+      branch: pushedBranch,
     });
   } catch (error) {
     console.error("GitHub webhook ingest failed:", error);

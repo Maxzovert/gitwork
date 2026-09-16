@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { githubCommitUrl, parseGithubUrl } from "@/lib/github-url";
 
 const CommitLog = () => {
   const { projectId, project } = useProjects();
@@ -34,6 +35,15 @@ const CommitLog = () => {
     },
     onError: (err) => toast.error(err.message || "Failed to sync commits"),
   });
+
+  let repoCleaned: string | null = null;
+  try {
+    if (project?.githubUrl) {
+      repoCleaned = parseGithubUrl(project.githubUrl).cleaned;
+    }
+  } catch {
+    repoCleaned = null;
+  }
 
   if (!project || !projectId.trim()) {
     return (
@@ -139,7 +149,11 @@ const CommitLog = () => {
                 <Link
                   target="_blank"
                   rel="noreferrer"
-                  href={`${project?.githubUrl}/commits/${commit.commitHash}`}
+                  href={
+                    repoCleaned
+                      ? githubCommitUrl(repoCleaned, commit.commitHash)
+                      : `${project?.githubUrl}/commit/${commit.commitHash}`
+                  }
                   className="inline-flex items-center gap-1.5 text-sm text-[#696969] hover:text-[#141413]"
                 >
                   <span className="font-semibold text-[#141413]">

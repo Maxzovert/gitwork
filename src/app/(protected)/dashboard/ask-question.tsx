@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useUser } from "@clerk/nextjs";
 import {
   ChevronDown,
   ChevronRight,
   Loader2,
-  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,9 +17,9 @@ import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ThemeSelect } from "@/components/ui/theme-select";
 import { GitworkLogo } from "@/components/gitwork-logo";
-import { Textarea } from "@/components/ui/textarea";
-import { StatusBadge } from "@/components/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -135,8 +137,15 @@ export function MarkdownAnswer({ content }: { content: string }) {
   );
 }
 
-const AskQuestionCard = () => {
-  const { project } = useProjects();
+type AskQuestionCardProps = {
+  className?: string;
+};
+
+const AskQuestionCard = ({ className }: AskQuestionCardProps) => {
+  const { user } = useUser();
+  const { project, projects, projectId, setProjectId } = useProjects();
+  const utils = api.useUtils();
+
   const [question, setQuestion] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -144,6 +153,8 @@ const AskQuestionCard = () => {
   const [answer, setAnswer] = useState("");
   const [askedQuestion, setAskedQuestion] = useState("");
   const [refsOpen, setRefsOpen] = useState(true);
+  const [selectedBranch, setSelectedBranch] = useState("");
+  const [savedToQa, setSavedToQa] = useState(false);
 
   const membership = api.project.getMyMembership.useQuery(
     { projectId: project?.id ?? "" },
@@ -165,63 +176,114 @@ const AskQuestionCard = () => {
       retry: false,
     },
   );
-  const [selectedBranch, setSelectedBranch] = useState("");
 
-  React.useEffect(() => {
+  useEffect(() => {
     const active = indexingStatus.data?.project?.activeBranch;
     if (active) {
       setSelectedBranch(active);
     } else if (branches.data?.defaultBranch) {
       setSelectedBranch(branches.data.defaultBranch);
+    } else {
+      setSelectedBranch("");
     }
-  }, [branches.data?.defaultBranch, indexingStatus.data?.project?.activeBranch]);
+  }, [
+    projectId,
+    branches.data?.defaultBranch,
+    indexingStatus.data?.project?.activeBranch,
+  ]);
 
-  const startIndexing = api.project.startIndexing.useMutation({
+  const updateActiveBranch = api.project.updateActiveBranch.useMutation({
     onSuccess: () => {
-      toast.success("Indexing started — progress will update below");
       void indexingStatus.refetch();
+      void utils.project.getProjects.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
 
   const saveAnswer = api.project.saveAnswer.useMutation({
-    onSuccess: () => toast.success("Answer saved"),
+    onSuccess: async () => {
+      toast.success("Saved to Q&A");
+      await utils.project.getQuestions.invalidate({
+        projectId: project?.id ?? "",
+      });
+    },
     onError: (err) => toast.error(err.message),
   });
+
+  const onBranchChange = (branch: string) => {
+    setSelectedBranch(branch);
+    if (
+      !project?.id ||
+      membership.data?.role !== "OWNER" ||
+      !branch ||
+      branch === indexingStatus.data?.project?.activeBranch
+    ) {
+      return;
+    }
+    updateActiveBranch.mutate({ projectId: project.id, branch });
+  };
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!project?.id || !question.trim()) return;
 
+    const asked = question.trim();
     setLoading(true);
     setOpen(true);
     setAnswer("");
     setFileReferences([]);
-    setAskedQuestion(question.trim());
+    setAskedQuestion(asked);
     setRefsOpen(true);
+    setSavedToQa(false);
+    setQuestion("");
+
+    let streamed = "";
+    let refs: FileReference[] = [];
 
     try {
-      const { output, fileReferences: refs } = await askQuestion(
-        question.trim(),
+      const { output, fileReferences: rawRefs } = await askQuestion(
+        asked,
         project.id,
+        selectedBranch || null,
       );
-      setFileReferences(
-        refs.map((r) => ({
-          filename: r.filename,
-          sourceCode: r.sourcecode,
-          summary: r.summary,
-        })),
-      );
+      refs = rawRefs.map((r) => ({
+        filename: r.filename,
+        sourceCode: r.sourcecode,
+        summary: r.summary,
+      }));
+      setFileReferences(refs);
+
       for await (const delta of readStreamableValue(output)) {
         if (delta) {
-          setAnswer((prev) => prev + delta);
+          streamed += delta;
+          setAnswer(streamed);
         }
+      }
+
+      if (streamed.trim()) {
+        await saveAnswer.mutateAsync({
+          projectId: project.id,
+          question: asked,
+          fileReference: refs,
+          answer: streamed,
+        });
+        setSavedToQa(true);
       }
     } catch (error) {
       console.error(error);
       toast.error("Failed to get an answer. Try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const repoLabel = (p: { name: string; githubUrl: string }) => {
+    try {
+      const parts = p.githubUrl.replace(/\.git$/, "").split("/");
+      const slug = parts.slice(-2).join("/");
+      return slug || p.name;
+    } catch {
+      return p.name;
     }
   };
 
@@ -240,23 +302,32 @@ const AskQuestionCard = () => {
                   {askedQuestion || "Your question"}
                 </DialogDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 border-dust text-sm"
-                disabled={!project?.id || saveAnswer.isPending || !answer}
-                onClick={() => {
-                  if (!project?.id) return;
-                  saveAnswer.mutate({
-                    projectId: project.id,
-                    question: askedQuestion,
-                    fileReference: fileReferences,
-                    answer: answer,
-                  });
-                }}
-              >
-                {saveAnswer.isPending ? "Saving…" : "Save"}
-              </Button>
+              {savedToQa ? (
+                <span className="shrink-0 rounded-full bg-[#eceae6] px-2.5 py-1 text-xs font-medium text-[#696969]">
+                  In Q&A
+                </span>
+              ) : answer ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 border-dust text-sm"
+                  disabled={!project?.id || saveAnswer.isPending}
+                  onClick={() => {
+                    if (!project?.id) return;
+                    saveAnswer.mutate(
+                      {
+                        projectId: project.id,
+                        question: askedQuestion,
+                        fileReference: fileReferences,
+                        answer: answer,
+                      },
+                      { onSuccess: () => setSavedToQa(true) },
+                    );
+                  }}
+                >
+                  {saveAnswer.isPending ? "Saving…" : "Save"}
+                </Button>
+              ) : null}
             </div>
           </DialogHeader>
 
@@ -311,7 +382,16 @@ const AskQuestionCard = () => {
                     Gathering relevant files…
                   </div>
                 ) : (
-                  <FileReferences files={fileReferences} />
+                  <FileReferences
+                    files={fileReferences}
+                    githubUrl={project?.githubUrl}
+                    branch={
+                      selectedBranch ||
+                      indexingStatus.data?.project?.activeBranch ||
+                      branches.data?.defaultBranch ||
+                      null
+                    }
+                  />
                 )
               ) : null}
             </section>
@@ -319,140 +399,111 @@ const AskQuestionCard = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="relative col-span-1 flex h-full flex-col rounded-xl border border-[#d1cdc7] bg-white p-5 lg:col-span-3">
-        <div className="mb-4">
-          <h3 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
-            Ask the codebase
-          </h3>
-          <p className="mt-1 text-sm text-[#696969]">
-            Get grounded answers with file references.
-          </p>
+      <div
+        className={cn(
+          "relative flex h-full flex-col overflow-visible rounded-[28px] border border-ghost bg-[#f7f3ee] p-6 shadow-[0_18px_50px_-28px_rgba(40,28,18,0.35)]",
+          className,
+        )}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[28px]"
+        >
+          <div className="absolute -top-16 -left-10 size-56 rounded-full bg-[#e8c9a8]/45 blur-3xl" />
+          <div className="absolute top-10 -right-16 size-64 rounded-full bg-[#d9b89a]/35 blur-3xl" />
+          <div className="absolute -bottom-20 left-1/3 size-52 rounded-full bg-[#f0e0d0]/70 blur-3xl" />
         </div>
-        <div className="mb-4 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-[#141413]">Indexing</p>
-                <StatusBadge
-                  status={indexingStatus.data?.job?.status ?? "IDLE"}
-                />
-              </div>
-              <p className="text-xs text-[#696969]">
-                Active branch:{" "}
-                {indexingStatus.data?.project?.activeBranch ??
-                  branches.data?.defaultBranch ??
-                  "Unknown"}
-                {indexingStatus.data?.project?.lastIndexedAt
-                  ? ` · Last indexed ${new Date(
-                      indexingStatus.data.project.lastIndexedAt,
-                    ).toLocaleString()}`
-                  : ""}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                disabled={
-                  membership.data?.role !== "OWNER" ||
-                  !branches.data?.branches?.length ||
-                  startIndexing.isPending
-                }
-                className="h-9 rounded-[20px] border border-[#d1cdc7] bg-white px-3 text-sm text-[#141413]"
-              >
-                {(branches.data?.branches ?? []).map((branchName) => (
-                  <option key={branchName} value={branchName}>
-                    {branchName}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  !project?.id ||
-                  membership.data?.role !== "OWNER" ||
-                  !selectedBranch ||
-                  startIndexing.isPending
-                }
-                onClick={() => {
-                  if (!project?.id || !selectedBranch) return;
-                  startIndexing.mutate({
-                    projectId: project.id,
-                    branch: selectedBranch,
-                  });
-                }}
-              >
-                <RefreshCw
-                  className={cn(
-                    "size-4",
-                    startIndexing.isPending && "animate-spin",
-                  )}
-                />
-                {startIndexing.isPending ? "Re-indexing…" : "Re-index repo"}
-              </Button>
-            </div>
+
+        <div className="relative z-10 flex flex-1 flex-col overflow-visible">
+          <div className="mx-auto max-w-xl text-center">
+            <h3 className="font-display text-2xl font-semibold tracking-[-0.03em] text-ink">
+              Ask the codebase
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate">
+              Ask anything about the indexed code, then choose the repository
+              and branch.
+            </p>
           </div>
 
-          {indexingStatus.data?.job ? (
-            <div className="mt-3 space-y-2">
-              <div className="h-2 overflow-hidden rounded-full bg-[#eceae6]">
-                <div
-                  className="h-full bg-[#141413] transition-all"
-                  style={{
-                    width: `${
-                      indexingStatus.data.job.totalFiles
-                        ? Math.max(
-                            6,
-                            Math.round(
-                              (indexingStatus.data.job.processedFiles /
-                                indexingStatus.data.job.totalFiles) *
-                                100,
-                            ),
-                          )
-                        : 0
-                    }%`,
-                  }}
+          <form
+            onSubmit={onSubmit}
+            className="relative z-20 mx-auto mt-6 flex w-full max-w-xl flex-col gap-4 overflow-visible"
+          >
+            <div className="flex items-center gap-3">
+              {user?.imageUrl ? (
+                <Image
+                  src={user.imageUrl}
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="size-10 shrink-0 rounded-full border border-white/80 shadow-sm"
                 />
-              </div>
-              <p className="text-xs text-[#696969]">
-                {indexingStatus.data.job.processedFiles}/
-                {indexingStatus.data.job.totalFiles || 0} files processed
-                {indexingStatus.data.job.failedFiles
-                  ? ` · ${indexingStatus.data.job.failedFiles} failed`
-                  : ""}
-                {indexingStatus.data.job.branch
-                  ? ` · Branch ${indexingStatus.data.job.branch}`
-                  : ""}
-              </p>
-              {indexingStatus.data.job.errorMessage ? (
-                <p className="text-xs text-[#cf4500]">
-                  {indexingStatus.data.job.errorMessage}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        <form onSubmit={onSubmit} className="flex flex-1 flex-col space-y-4">
-          <Textarea
-            placeholder="Which file should I edit to change the home page?"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            className="min-h-28 flex-1 resize-none rounded-lg border-[#d1cdc7] bg-[#fcfbfa]"
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={loading || !project?.id}>
-              {loading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Asking…
-                </>
               ) : (
-                "Ask Gitwork"
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink text-canvas shadow-sm">
+                  <GitworkLogo size={22} />
+                </div>
               )}
-            </Button>
-          </div>
-        </form>
+              <div className="relative min-w-0 flex-1">
+                <Input
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="Write a question to codebase..."
+                  disabled={loading || !project?.id}
+                  className="h-12 rounded-full border-dust bg-white pr-24 text-sm text-ink shadow-sm placeholder:text-slate/70"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={loading || !project?.id || !question.trim()}
+                  className="absolute top-1/2 right-1.5 h-9 -translate-y-1/2 rounded-full px-4"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Asking
+                    </>
+                  ) : (
+                    "Ask"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="relative z-30 flex flex-wrap items-center gap-2 overflow-visible">
+              <ThemeSelect
+                id="ask-repo"
+                aria-label="Repository"
+                value={projectId ?? ""}
+                onChange={setProjectId}
+                disabled={!projects?.length}
+                className="min-w-[11rem]"
+                placeholder="Select repository"
+                options={(projects ?? []).map((p) => ({
+                  value: p.id,
+                  label: repoLabel(p),
+                }))}
+              />
+              <ThemeSelect
+                id="ask-branch"
+                aria-label="Branch"
+                value={selectedBranch}
+                onChange={onBranchChange}
+                disabled={
+                  !branches.data?.branches?.length ||
+                  updateActiveBranch.isPending
+                }
+                className="min-w-[8.5rem]"
+                placeholder={
+                  branches.isFetching ? "Loading branches…" : "No branches"
+                }
+                options={(branches.data?.branches ?? []).map((branchName) => ({
+                  value: branchName,
+                  label: branchName,
+                }))}
+              />
+            </div>
+          </form>
+        </div>
       </div>
     </>
   );

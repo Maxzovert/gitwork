@@ -41,6 +41,49 @@ model User {
     invitesCreated  ProjectInvite[]
     meetingsCreated Meeting[]
     indexingJobs    IndexingJob[]
+    settings        UserSettings?
+    apiTokens       UserApiToken[]
+}
+
+enum ApiTokenProvider {
+    GITHUB
+    GEMINI
+    ASSEMBLYAI
+    CUSTOM
+}
+
+model UserSettings {
+    userId    String   @id
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    emailNotifications Boolean @default(true)
+    productUpdates     Boolean @default(false)
+    commitDigest       Boolean @default(true)
+    meetingAlerts      Boolean @default(true)
+    indexingAlerts     Boolean @default(true)
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Secrets are stored as AES-256-GCM ciphertext — never plaintext.
+model UserApiToken {
+    id        String   @id @default(cuid())
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    name     String
+    provider ApiTokenProvider @default(CUSTOM)
+    /// Last 4 characters for UI display only
+    lastFour String
+    ciphertext String
+    iv         String
+    authTag    String
+
+    userId String
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, provider])
 }
 
 model Project {
@@ -213,6 +256,9 @@ model Issue {
     gist     String
     headline String
     summary  String
+
+    githubIssueNumber Int?
+    githubIssueUrl    String?
 
     meetingId String
     meeting   Meeting @relation(fields: [meetingId], references: [id])

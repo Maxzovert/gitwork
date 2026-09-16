@@ -7,7 +7,8 @@ export default function Page() {
   return (
     <AuthShell>
       <SignIn
-        forceRedirectUrl="/sync-user"
+        // fallback only — do NOT use forceRedirectUrl, or Clerk ignores
+        // redirect_url (e.g. /meetings/[id]) and always dumps users on /sync-user
         fallbackRedirectUrl="/sync-user"
         signUpUrl="/sign-up"
         appearance={clerkAppearance}

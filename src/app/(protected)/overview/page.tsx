@@ -226,7 +226,13 @@ export default function ProjectOverviewPage() {
               <h3 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
                 File references
               </h3>
-              <FileReferences files={activeFiles} />
+              <FileReferences
+                files={activeFiles}
+                githubUrl={project?.githubUrl}
+                branch={
+                  project?.activeBranch ?? project?.defaultBranch ?? null
+                }
+              />
             </section>
           ) : overview.fileReferences?.length ? (
             <section className="space-y-3">
@@ -239,6 +245,10 @@ export default function ProjectOverviewPage() {
                   sourceCode: file.sourceCode,
                   summary: file.summary,
                 }))}
+                githubUrl={project?.githubUrl}
+                branch={
+                  project?.activeBranch ?? project?.defaultBranch ?? null
+                }
               />
             </section>
           ) : null}

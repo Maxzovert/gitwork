@@ -22,6 +22,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { GitworkLogo } from "@/components/gitwork-logo";
+import { GithubTokenGuide } from "@/components/github-token-guide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useProjects from "@/hooks/use-projects";
@@ -41,7 +42,8 @@ const ONBOARDING_STEPS = [
   },
   {
     title: "Connect GitHub",
-    description: "Authorize once. Add as many repositories as you need after that.",
+    description:
+      "Authorize with OAuth to read repos, or add a PAT in Settings for write actions.",
   },
   {
     title: "Repository",
@@ -590,7 +592,9 @@ export function CreateProjectOnboarding() {
                     </li>
                   </ul>
                   <p className="border-l-2 border-[#cf4500]/50 pl-4 text-sm leading-6 text-[#696969]">
-                    Authorize GitHub once — then add any repo you can access, without pasting tokens.
+                    Authorize GitHub once to browse and index repos. For creating
+                    issues, PR review comments, and draft releases, add a Personal
+                    Access Token later in Settings with write permissions.
                   </p>
                 </div>
               ) : null}
@@ -605,16 +609,20 @@ export function CreateProjectOnboarding() {
                           <p className="font-medium text-[#141413]">
                             {githubStatus.data?.usingServerFallback
                               ? "Using server GitHub access"
-                              : `GitHub connected${
-                                  githubStatus.data?.username
-                                    ? ` as @${githubStatus.data.username}`
-                                    : ""
-                                }`}
+                              : githubStatus.data?.usingSettingsPat
+                                ? "Using GitHub token from Settings"
+                                : `GitHub connected${
+                                    githubStatus.data?.username
+                                      ? ` as @${githubStatus.data.username}`
+                                      : ""
+                                  }`}
                           </p>
                           <p className="mt-1 text-sm leading-6 text-[#696969]">
                             {githubStatus.data?.usingServerFallback
-                              ? "GITHUB_TOKEN is set on the server. You can still authorize your own GitHub account below."
-                              : "You can add repositories without pasting a personal access token."}
+                              ? "GITHUB_TOKEN is set on the server. You can still authorize your own GitHub account or add a PAT in Settings."
+                              : githubStatus.data?.usingSettingsPat
+                                ? "Your Settings PAT is preferred for GitHub reads and writes. Keep Pull requests, Issues, and Contents on Read and write."
+                                : "OAuth is connected for repo access. Add a PAT in Settings if you need to create issues, post PR reviews, or draft releases."}
                           </p>
                         </div>
                       </div>
@@ -654,11 +662,14 @@ export function CreateProjectOnboarding() {
                         )}
                       </Button>
                       <p className="text-xs leading-5 text-[#696969]">
-                        Uses Clerk GitHub OAuth with the <code className="text-[#141413]">repo</code>{" "}
-                        scope. Enable GitHub SSO + custom credentials in the Clerk dashboard.
+                        Uses Clerk GitHub OAuth with the{" "}
+                        <code className="text-[#141413]">repo</code> scope. Enable
+                        GitHub SSO + custom credentials in the Clerk dashboard.
                       </p>
                     </div>
                   )}
+
+                  <GithubTokenGuide variant="compact" showSettingsLink />
 
                   {githubReady ? (
                     <button

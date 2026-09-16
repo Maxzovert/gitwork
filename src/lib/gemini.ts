@@ -440,3 +440,57 @@ export async function generateEmbeddings(summary: string) {
   // Default output is 3072; schema column is vector(768)
   return truncateAndNormalize(result.embedding.values);
 }
+
+export async function summariseChangelog(input: {
+  repo: string;
+  base: string;
+  head: string;
+  commits: Array<{ sha: string; message: string; author: string }>;
+  pulls: Array<{ number: number; title: string }>;
+}): Promise<string> {
+  try {
+    const response = await withRetry(() =>
+      model.generateContent([
+        `You write GitHub release notes in markdown.
+Return ONLY markdown (no JSON, no code fences).
+Use sections like ## Highlights, ## Changes, ## Fixes when useful.
+Be concrete; do not invent features not implied by commits/PRs.
+Keep it concise (under ~400 words).
+
+Repository: ${input.repo}
+Range: ${input.base}...${input.head}
+
+Merged / referenced PRs:
+${input.pulls.map((pr) => `- #${pr.number} ${pr.title}`).join("\n") || "(none detected)"}
+
+Commits:
+${input.commits.map((c) => `- ${c.sha} ${c.message} (${c.author})`).join("\n")}
+`,
+      ]),
+    );
+
+    const text = response.response.text().trim();
+    if (text) return text;
+  } catch (error) {
+    console.error("Failed to summarise changelog:", error);
+  }
+
+  const fallbackLines = [
+    `## Changes`,
+    "",
+    `Changes between \`${input.base}\` and \`${input.head}\`.`,
+    "",
+  ];
+
+  for (const pr of input.pulls.slice(0, 20)) {
+    fallbackLines.push(`- #${pr.number} ${pr.title}`);
+  }
+
+  if (!input.pulls.length) {
+    for (const commit of input.commits.slice(-20)) {
+      fallbackLines.push(`- ${commit.message} (${commit.sha})`);
+    }
+  }
+
+  return fallbackLines.join("\n");
+}

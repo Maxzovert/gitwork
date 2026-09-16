@@ -477,6 +477,8 @@ export async function startIndexingJob(params: {
   branch?: string;
   githubToken?: string;
   triggeredByUserId?: string;
+  /** When true, do not overwrite project.activeBranch (e.g. webhook reindex). */
+  preserveActiveBranch?: boolean;
 }) {
   const defaultBranch = await getDefaultBranch(
     params.githubUrl,
@@ -488,7 +490,7 @@ export async function startIndexingJob(params: {
     where: { id: params.projectId },
     data: {
       defaultBranch,
-      activeBranch: branch,
+      ...(params.preserveActiveBranch ? {} : { activeBranch: branch }),
     },
   });
 
@@ -512,9 +514,39 @@ export async function startIndexingJob(params: {
   return job;
 }
 
+export async function hasActiveIndexingJob(projectId: string) {
+  const job = await db.indexingJob.findFirst({
+    where: {
+      projectId,
+      status: { in: ["QUEUED", "PROCESSING"] },
+    },
+    select: { id: true },
+  });
+  return Boolean(job);
+}
+
+/** Start indexing only when no QUEUED/PROCESSING job exists for the project. */
+export async function startIndexingJobIfIdle(
+  params: Parameters<typeof startIndexingJob>[0],
+) {
+  if (await hasActiveIndexingJob(params.projectId)) {
+    return null;
+  }
+  return await startIndexingJob(params);
+}
+
 export async function getLatestIndexingJob(projectId: string) {
   return await db.indexingJob.findFirst({
     where: { projectId },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function countEmbeddingsForBranch(
+  projectId: string,
+  branch: string,
+) {
+  return await db.sourceCodeEmbeddings.count({
+    where: { projectId, branch },
   });
 }

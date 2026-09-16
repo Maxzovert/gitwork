@@ -11,7 +11,8 @@ export async function completeUserSync() {
     return "/sign-in";
   }
 
-  await ensureDbUser({ refreshProfile: true });
+  // Fast path: upsert without blocking on a full Clerk profile refresh.
+  await ensureDbUser();
 
   const projectCount = await db.userToProject.count({
     where: {

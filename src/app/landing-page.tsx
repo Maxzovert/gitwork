@@ -110,22 +110,46 @@ const storyCards = [
 
 const newFeatures = [
   {
-    id: "onboarding",
+    id: "overview",
     chip: "New",
-    title: "Guided project onboarding",
-    body: "Create a project with a step-by-step flow for repository setup, token permissions, branch selection, and first indexing.",
+    title: "A beginner map for every repository",
+    body: "Generate a plain-language overview of what the project does, how to run it, how its folders fit together, and which files to open first.",
+    href: "/sign-up",
+  },
+  {
+    id: "releases",
+    chip: "New",
+    title: "Draft release notes from Git tags",
+    body: "Compare a base tag with a tag or active branch, turn the commits into an editable changelog, and create a draft GitHub Release.",
+    href: "/sign-up",
+  },
+  {
+    id: "settings",
+    chip: "New",
+    title: "Encrypted tokens and preferences",
+    body: "Manage notification preferences and store API tokens encrypted with AES-256-GCM, including a GitHub PAT fallback when OAuth is unavailable.",
+    href: "/sign-up",
+  },
+  {
+    id: "branches",
+    chip: "Workspace",
+    title: "Ask and index the branch you need",
+    body: "Switch the active branch from the Q&A workspace. Gitwork keeps embeddings branch-aware and starts indexing when that branch needs context.",
+    href: "/sign-up",
   },
   {
     id: "digests",
-    chip: "New",
+    chip: "Reviews",
     title: "PR digests with risk callouts",
     body: "Generate a live summary of open pull requests, weekly changes, and high-risk review areas without opening every tab in GitHub.",
+    href: "/sign-up",
   },
   {
     id: "team",
-    chip: "New",
+    chip: "Teams",
     title: "Invite your team into one workspace",
     body: "Share project access with invite links so collaborators can use the same code Q&A, meeting history, and repository context.",
+    href: "/sign-up",
   },
 ];
 
@@ -153,17 +177,17 @@ const steps = [
   {
     n: "02",
     title: "Link a GitHub repo",
-    body: "Paste the URL, optionally add a token for private repos, and let Gitwork index the code.",
+    body: "Authorize GitHub, choose a repository and branch, and let Gitwork build searchable project context.",
   },
   {
     n: "03",
     title: "Ask, upload, review",
-    body: "Query the codebase, drop meeting audio, and skim commit summaries from one dashboard.",
+    body: "Query the codebase, generate an overview, drop meeting audio, and scan commit or pull request summaries.",
   },
   {
     n: "04",
     title: "Keep what matters",
-    body: "Save strong answers, open meeting issues, and switch projects without losing context.",
+    body: "Save answers, open meeting issues, invite teammates, and draft release notes without losing project context.",
   },
 ];
 
@@ -534,8 +558,8 @@ export default function LandingPage() {
           <div data-hero-el className="max-w-md">
             <p className="text-base font-[450] leading-[1.4] text-[#141413]">
               Ask the codebase. Capture meetings. Read commit history in plain
-              language. Now with guided project setup, PR digests, and shared
-              team workspaces tied to the repo you are shipping.
+              language. Generate repository overviews, review PR risk, and turn
+              Git tags into draft releases from the same shared workspace.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <InkButton href="/sign-up">Get started</InkButton>
@@ -609,8 +633,8 @@ export default function LandingPage() {
             data-reveal
             className="mx-auto mt-5 max-w-2xl text-base font-[450] leading-[1.5] text-[#696969]"
           >
-            A cleaner setup flow, better review visibility, and shared project
-            access for the people working in the same repository.
+            Faster onboarding, branch-aware answers, safer credentials, and
+            less manual work from pull request review through release day.
           </p>
         </div>
 
@@ -630,6 +654,13 @@ export default function LandingPage() {
               <p className="mt-3 text-base font-[450] leading-[1.5] text-[#696969]">
                 {feature.body}
               </p>
+              <Link
+                href={feature.href}
+                className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-[#141413] transition-transform hover:translate-x-1"
+              >
+                Explore feature
+                <ArrowRight className="size-4" />
+              </Link>
             </article>
           ))}
         </div>
@@ -718,7 +749,7 @@ export default function LandingPage() {
               <span>What Gitwork offers</span>
             </Eyebrow>
             <h2 className="font-display mt-4 text-[36px] leading-[44px] tracking-[-0.02em]">
-              Three ways to stay close to your repository
+              Three daily ways to stay close to your repository
             </h2>
           </div>
 
@@ -1056,6 +1087,16 @@ export default function LandingPage() {
                   <a href="#services" className="hover:underline">
                     Commits
                   </a>
+                </li>
+                <li>
+                  <Link href="/sign-up" className="hover:underline">
+                    Repository overviews
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/sign-up" className="hover:underline">
+                    PR digests &amp; releases
+                  </Link>
                 </li>
               </ul>
             </div>

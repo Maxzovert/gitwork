@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ExternalLink, GitPullRequestArrow, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ExternalLink,
+  GitPullRequestArrow,
+  MessageSquarePlus,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -12,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
+import { githubBlobUrl, parseGithubUrl } from "@/lib/github-url";
 
 function RiskBadge({ level }: { level: "low" | "medium" | "high" }) {
   const styles =
@@ -36,6 +43,7 @@ function RiskBadge({ level }: { level: "low" | "medium" | "high" }) {
 export default function PullRequestDigestsPage() {
   const { project, projectId } = useProjects();
   const [requested, setRequested] = useState(false);
+  const [postingPr, setPostingPr] = useState<number | null>(null);
 
   const digestQuery = api.project.getPullRequestDigest.useQuery(
     { projectId: projectId ?? "" },
@@ -45,37 +53,47 @@ export default function PullRequestDigestsPage() {
     },
   );
 
+  const postComment = api.project.postPullRequestDigestComment.useMutation({
+    onSuccess: (data, variables) => {
+      toast.success(`Posted review comment on #${variables.prNumber}`, {
+        action: {
+          label: "Open PR",
+          onClick: () =>
+            window.open(data.prUrl, "_blank", "noopener,noreferrer"),
+        },
+      });
+    },
+    onError: (err) => toast.error(err.message || "Failed to post comment"),
+    onSettled: () => setPostingPr(null),
+  });
+
   const generateDigest = () => {
     if (!projectId) return;
     setRequested(true);
-    void digestQuery.refetch().then((result) => {
-      if (result.error) {
-        toast.error(result.error.message || "Failed to generate digest");
-      }
-    });
+    void digestQuery.refetch();
   };
 
-  if (!projectId || !project) {
-    return (
-      <EmptyState
-        icon={GitPullRequestArrow}
-        title="Select a project"
-        description="Choose a project from the sidebar to generate a PR digest."
-      />
-    );
+  const branch = project?.activeBranch ?? project?.defaultBranch ?? "HEAD";
+  let repoCleaned: string | null = null;
+  try {
+    if (project?.githubUrl) {
+      repoCleaned = parseGithubUrl(project.githubUrl).cleaned;
+    }
+  } catch {
+    repoCleaned = null;
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="PR Digests"
-        description="Generate an AI digest of open pull requests, risk areas, and what changed in the last 7 days."
+        description="AI summary of open pull requests, risk areas, and what changed in the last 7 days."
         actions={
           <Button
             type="button"
-            disabled={digestQuery.isFetching}
             onClick={generateDigest}
-            className="rounded-[20px]"
+            disabled={!projectId || digestQuery.isFetching}
+            className="gap-2"
           >
             <RefreshCw
               className={cn("size-4", digestQuery.isFetching && "animate-spin")}
@@ -85,60 +103,51 @@ export default function PullRequestDigestsPage() {
         }
       />
 
-      {!requested ? (
+      {!projectId ? (
         <EmptyState
           icon={GitPullRequestArrow}
-          title="Generate a digest"
-          description={`Create a live PR summary for ${project.name}, including review risk and weekly changes.`}
+          title="Select a project"
+          description="Choose a project from the sidebar to generate a PR digest."
+        />
+      ) : !requested ? (
+        <EmptyState
+          icon={GitPullRequestArrow}
+          title="Generate a PR digest"
+          description="Pull live open PRs from GitHub and get risk-aware review summaries."
           action={
-            <Button type="button" onClick={generateDigest} className="rounded-[20px]">
+            <Button type="button" onClick={generateDigest}>
               Generate digest
             </Button>
           }
         />
-      ) : digestQuery.isLoading || digestQuery.isFetching ? (
+      ) : digestQuery.isLoading ? (
         <div className="space-y-4">
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <div className="grid gap-4 md:grid-cols-3">
-            <Skeleton className="h-28 rounded-xl" />
-            <Skeleton className="h-28 rounded-xl" />
-            <Skeleton className="h-28 rounded-xl" />
-          </div>
-          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-xl" />
         </div>
-      ) : digestQuery.error ? (
+      ) : digestQuery.isError ? (
         <EmptyState
           icon={AlertTriangle}
-          title="Digest unavailable"
+          title="Could not generate digest"
           description={digestQuery.error.message}
           action={
-            <Button type="button" onClick={generateDigest} className="rounded-[20px]">
+            <Button type="button" variant="outline" onClick={generateDigest}>
               Try again
             </Button>
           }
         />
       ) : digestQuery.data ? (
         <>
-          <section className="rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold tracking-[0.08em] text-[#696969] uppercase">
-                  Executive summary
-                </p>
-                <h2 className="font-display mt-1 text-lg tracking-[-0.02em] text-[#141413]">
-                  {project.name}
-                </h2>
-              </div>
-              <span className="text-xs text-[#696969]">
-                Generated {new Date(digestQuery.data.generatedAt).toLocaleString()}
-              </span>
-            </div>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[#141413]">
+          <section className="rounded-xl border border-[#d1cdc7] bg-white p-5">
+            <h3 className="font-display text-lg tracking-[-0.02em] text-[#141413]">
+              Executive summary
+            </h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#141413]">
               {digestQuery.data.executiveSummary}
             </p>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
+          <section className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl border border-[#d1cdc7] bg-white p-5">
               <p className="text-xs font-semibold tracking-[0.08em] text-[#696969] uppercase">
                 Opened
@@ -146,7 +155,9 @@ export default function PullRequestDigestsPage() {
               <p className="mt-2 font-display text-3xl tracking-[-0.02em] text-[#141413]">
                 {digestQuery.data.changedSinceLastWeek.opened}
               </p>
-              <p className="mt-1 text-sm text-[#696969]">New PRs in the last 7 days</p>
+              <p className="mt-1 text-sm text-[#696969]">
+                PRs opened in the last 7 days
+              </p>
             </div>
             <div className="rounded-xl border border-[#d1cdc7] bg-white p-5">
               <p className="text-xs font-semibold tracking-[0.08em] text-[#696969] uppercase">
@@ -155,7 +166,9 @@ export default function PullRequestDigestsPage() {
               <p className="mt-2 font-display text-3xl tracking-[-0.02em] text-[#141413]">
                 {digestQuery.data.changedSinceLastWeek.merged}
               </p>
-              <p className="mt-1 text-sm text-[#696969]">PRs merged in the last 7 days</p>
+              <p className="mt-1 text-sm text-[#696969]">
+                PRs merged in the last 7 days
+              </p>
             </div>
             <div className="rounded-xl border border-[#d1cdc7] bg-white p-5">
               <p className="text-xs font-semibold tracking-[0.08em] text-[#696969] uppercase">
@@ -164,7 +177,9 @@ export default function PullRequestDigestsPage() {
               <p className="mt-2 font-display text-3xl tracking-[-0.02em] text-[#141413]">
                 {digestQuery.data.changedSinceLastWeek.active}
               </p>
-              <p className="mt-1 text-sm text-[#696969]">PRs updated in the last 7 days</p>
+              <p className="mt-1 text-sm text-[#696969]">
+                PRs updated in the last 7 days
+              </p>
             </div>
           </section>
 
@@ -192,11 +207,42 @@ export default function PullRequestDigestsPage() {
                             <ExternalLink className="size-3.5" />
                           </Link>
                           <p className="mt-1 text-sm text-[#696969]">
-                            {pr.author} · {pr.changedFiles} files · +{pr.additions}/-{pr.deletions}
+                            {pr.author} · {pr.changedFiles} files · +
+                            {pr.additions}/-{pr.deletions}
                             {pr.isDraft ? " · Draft" : ""}
                           </p>
                         </div>
-                        <RiskBadge level={pr.riskLevel} />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <RiskBadge level={pr.riskLevel} />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              !projectId ||
+                              postComment.isPending ||
+                              postingPr === pr.number
+                            }
+                            onClick={() => {
+                              if (!projectId) return;
+                              setPostingPr(pr.number);
+                              postComment.mutate({
+                                projectId,
+                                prNumber: pr.number,
+                                title: pr.title,
+                                summary: pr.summary,
+                                riskLevel: pr.riskLevel,
+                                riskAreas: pr.riskAreas,
+                                reviewerFocus: pr.reviewerFocus,
+                              });
+                            }}
+                          >
+                            <MessageSquarePlus className="size-3.5" />
+                            {postingPr === pr.number
+                              ? "Posting…"
+                              : "Post to GitHub"}
+                          </Button>
+                        </div>
                       </div>
 
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#141413]">
@@ -231,6 +277,34 @@ export default function PullRequestDigestsPage() {
                               <li key={item}>- {item}</li>
                             ))}
                           </ul>
+                        </div>
+                      ) : null}
+
+                      {pr.riskLevel !== "low" &&
+                      pr.filenames.length &&
+                      repoCleaned ? (
+                        <div className="mt-4">
+                          <p className="text-xs font-semibold tracking-[0.08em] text-[#696969] uppercase">
+                            Risk files
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {pr.filenames.slice(0, 6).map((filename) => (
+                              <a
+                                key={filename}
+                                href={githubBlobUrl(
+                                  repoCleaned,
+                                  branch,
+                                  filename,
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 rounded-md bg-[#eceae6] px-2 py-1 font-mono text-[11px] text-[#696969] hover:text-[#141413]"
+                              >
+                                {filename.split("/").pop()}
+                                <ExternalLink className="size-3" />
+                              </a>
+                            ))}
+                          </div>
                         </div>
                       ) : null}
                     </article>
@@ -285,9 +359,11 @@ export default function PullRequestDigestsPage() {
                 </h3>
                 {digestQuery.data.changedSinceLastWeek.themes.length ? (
                   <ul className="mt-4 space-y-2 text-sm text-[#141413]">
-                    {digestQuery.data.changedSinceLastWeek.themes.map((theme) => (
-                      <li key={theme}>- {theme}</li>
-                    ))}
+                    {digestQuery.data.changedSinceLastWeek.themes.map(
+                      (theme) => (
+                        <li key={theme}>- {theme}</li>
+                      ),
+                    )}
                   </ul>
                 ) : (
                   <p className="mt-4 text-sm text-[#696969]">

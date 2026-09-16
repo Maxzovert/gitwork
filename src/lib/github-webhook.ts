@@ -166,6 +166,8 @@ export async function findProjectForPush(payload: GithubPushPayload) {
       id: true,
       githubUrl: true,
       webhookSecret: true,
+      activeBranch: true,
+      defaultBranch: true,
     },
   });
 

@@ -22,6 +22,8 @@ import {
   LayoutDashboard,
   Plus,
   Presentation,
+  Settings,
+  Tag,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -40,7 +42,11 @@ function Appsidebar() {
     // Wait until the list has settled so a post-create navigation isn't
     // bounced back to /create while getProjects is still refetching.
     if (!isFetched || isFetching) return;
-    if (!projects?.length && pathname !== "/create") {
+    if (
+      !projects?.length &&
+      pathname !== "/create" &&
+      pathname !== "/settings"
+    ) {
       router.replace("/create");
     }
   }, [isFetched, isFetching, pathname, projects, router]);
@@ -51,7 +57,9 @@ function Appsidebar() {
     { title: "Q&A", url: "/qa", icon: Bot },
     { title: "Meetings", url: "/meetings", icon: Presentation },
     { title: "PR Digests", url: "/pr-digests", icon: GitPullRequestArrow },
+    { title: "Releases", url: "/releases", icon: Tag },
     { title: "Team", url: "/team", icon: Users },
+    { title: "Settings", url: "/settings", icon: Settings },
   ];
 
   return (

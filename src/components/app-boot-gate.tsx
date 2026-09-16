@@ -7,12 +7,16 @@ import useProjects from "@/hooks/use-projects";
 
 let workspaceBooted = false;
 
+const BOOT_TIMEOUT_MS = 10_000;
+
 export function AppBootGate({ children }: { children: React.ReactNode }) {
   const { isPending, isFetched } = useProjects();
   const [showLoader, setShowLoader] = useState(() => !workspaceBooted);
   const [progress, setProgress] = useState(workspaceBooted ? 100 : 32);
+  const [timedOut, setTimedOut] = useState(false);
 
-  const waiting = !workspaceBooted && (isPending || !isFetched);
+  const waiting =
+    !workspaceBooted && !timedOut && (isPending || !isFetched);
 
   useEffect(() => {
     if (workspaceBooted) {
@@ -23,6 +27,11 @@ export function AppBootGate({ children }: { children: React.ReactNode }) {
     if (sessionStorage.getItem("gitwork-boot") === "1") {
       setProgress(74);
     }
+
+    const timeout = window.setTimeout(() => {
+      setTimedOut(true);
+    }, BOOT_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
@@ -46,7 +55,7 @@ export function AppBootGate({ children }: { children: React.ReactNode }) {
     return (
       <WorkspaceLoader
         title="Almost there"
-        message="Loading your dashboard…"
+        message="Loading your workspace…"
         progress={progress}
       />
     );

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "node .cursor/hooks/scaffold-feature-note.mjs"
+      }
+    ],
+    "stop": [
+      {
+        "type": "prompt",
+        "prompt": "If this session added or substantially changed a product feature (new protected page, domain lib, API/webhook route, or tRPC capability) and there is no matching filled-in file under notes/, create or complete notes/NN-kebab-name.md from notes/_TEMPLATE.md and update notes/README.md. If no feature work happened, do nothing. Hook input: $ARGUMENTS",
+        "timeout": 15,
+        "loop_limit": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Issue" ADD COLUMN IF NOT EXISTS "githubIssueNumber" INTEGER;
+ALTER TABLE "Issue" ADD COLUMN IF NOT EXISTS "githubIssueUrl" TEXT;

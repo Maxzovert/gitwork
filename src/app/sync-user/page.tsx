@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 
 import { WorkspaceLoader } from "@/components/workspace-loader";
@@ -13,15 +14,23 @@ const STEPS = [
   { at: 84, message: "Opening your workspace…" },
 ];
 
+const SYNC_TIMEOUT_MS = 12_000;
+
 export default function SyncUserPage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
   const [progress, setProgress] = useState(8);
   const [message, setMessage] = useState("Signing you in…");
-  const started = useRef(false);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
+    if (!isLoaded) return;
+
+    if (!isSignedIn) {
+      router.replace("/sign-in");
+      return;
+    }
+
+    let cancelled = false;
 
     const tick = window.setInterval(() => {
       setProgress((current) => {
@@ -32,22 +41,37 @@ export default function SyncUserPage() {
       });
     }, 280);
 
+    const finish = (href: string) => {
+      if (cancelled) return;
+      window.clearInterval(tick);
+      window.clearTimeout(timeout);
+      setProgress(96);
+      setMessage("Opening your workspace…");
+      sessionStorage.setItem("gitwork-boot", "1");
+      router.replace(href);
+    };
+
+    const timeout = window.setTimeout(() => {
+      console.warn("completeUserSync timed out — continuing to dashboard");
+      finish("/dashboard");
+    }, SYNC_TIMEOUT_MS);
+
     void completeUserSync()
       .then((href) => {
-        window.clearInterval(tick);
-        setProgress(96);
-        setMessage("Opening your workspace…");
-        sessionStorage.setItem("gitwork-boot", "1");
-        router.replace(href);
+        // Never bounce an authenticated session onto <SignIn />
+        finish(href === "/sign-in" ? "/dashboard" : href);
       })
-      .catch(() => {
-        window.clearInterval(tick);
-        setMessage("Something went wrong. Taking you to sign in…");
-        router.replace("/sign-in");
+      .catch((error) => {
+        console.error("completeUserSync failed:", error);
+        finish("/dashboard");
       });
 
-    return () => window.clearInterval(tick);
-  }, [router]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(tick);
+      window.clearTimeout(timeout);
+    };
+  }, [isLoaded, isSignedIn, router]);
 
   return (
     <WorkspaceLoader

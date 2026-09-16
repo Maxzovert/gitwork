@@ -1,0 +1,32 @@
+---
+description: Auto-create and maintain developer notes for every product feature
+alwaysApply: true
+---
+
+# Feature notes (required)
+
+The repo keeps developer docs in `notes/`. Each product feature has a markdown file covering **What**, **Why**, **How it works**, and **Developer details**.
+
+## When you add or ship a new feature
+
+1. Create `notes/NN-kebab-name.md` using `notes/_TEMPLATE.md` (next free number).
+2. Fill What / Why / How / Key files / Env / Related links — do not leave a stub if you implemented the feature in this session.
+3. Add a row to the index in `notes/README.md`.
+4. If you only scaffolded code and the hook created a stub, upgrade the stub before finishing.
+
+## When you change an existing feature
+
+Update the matching `notes/*.md` if behavior, entry points, env vars, or data model changed.
+
+## What counts as a feature
+
+- New protected route/page (Dashboard, Overview, Q&A-style product surface)
+- New `src/lib/*` domain module (GitHub/AI/meeting/etc.)
+- New tRPC procedures that introduce user-facing capability
+- New webhook/API route for a product pipeline
+
+Not required for: pure UI polish, typo fixes, refactors with no behavior change, shadcn primitives.
+
+## Naming
+
+`NN-short-kebab-case.md` — e.g. `17-slack-digest.md`.

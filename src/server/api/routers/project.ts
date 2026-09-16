@@ -10,12 +10,25 @@ import {
   resolveProjectGithubToken,
 } from "@/lib/github-auth";
 import {
+  countEmbeddingsForBranch,
   getLatestIndexingJob,
   listGithubBranches,
   startIndexingJob,
+  startIndexingJobIfIdle,
 } from "@/lib/github-loader";
-import { buildPullRequestDigest } from "@/lib/github-prs";
-import { generateProjectOverview } from "@/lib/gemini";
+import {
+  buildPullRequestDigest,
+  buildPullRequestDigestReviewBody,
+  postPullRequestDigestComment,
+} from "@/lib/github-prs";
+import {
+  buildMeetingIssueBody,
+  createGithubIssueFromChapter,
+} from "@/lib/github-issues";
+import {
+  generateProjectOverview,
+  summariseChangelog,
+} from "@/lib/gemini";
 import {
   allowedFilenames,
   buildFolderSketch,
@@ -25,6 +38,11 @@ import {
   resolveOverviewFileReferences,
   type ProjectOverviewJson,
 } from "@/lib/github-overview";
+import {
+  buildChangelogBetweenRefs,
+  createDraftRelease,
+  listRepoTags,
+} from "@/lib/github-releases";
 import { parseGithubUrl } from "@/lib/github-url";
 import {
   deleteProjectWebhook,
@@ -230,10 +248,31 @@ export const projectRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       await requireProjectOwner(ctx.db, input.projectId, ctx.user.userId!);
 
-      return await ctx.db.project.update({
+      const project = await ctx.db.project.update({
         where: { id: input.projectId },
         data: { activeBranch: input.branch },
       });
+
+      const embeddingCount = await countEmbeddingsForBranch(
+        input.projectId,
+        input.branch,
+      );
+
+      if (embeddingCount === 0 || !project.lastIndexedCommitSha) {
+        const githubToken = await resolveProjectGithubToken(input.projectId);
+        void startIndexingJobIfIdle({
+          projectId: input.projectId,
+          githubUrl: project.githubUrl,
+          branch: input.branch,
+          githubToken: githubToken ?? undefined,
+          triggeredByUserId: ctx.user.userId!,
+          preserveActiveBranch: true,
+        }).catch((error) =>
+          console.error("Background reindex after branch switch failed:", error),
+        );
+      }
+
+      return project;
     }),
 
   getActiveInvite: protectedProcedure
@@ -578,6 +617,46 @@ export const projectRouter = createTRPCRouter({
       );
     }),
 
+  postPullRequestDigestComment: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        prNumber: z.number().int().positive(),
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        riskLevel: z.enum(["low", "medium", "high"]),
+        riskAreas: z.array(z.string()).default([]),
+        reviewerFocus: z.array(z.string()).default([]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      const body = buildPullRequestDigestReviewBody({
+        title: input.title,
+        summary: input.summary,
+        riskLevel: input.riskLevel,
+        riskAreas: input.riskAreas,
+        reviewerFocus: input.reviewerFocus,
+      });
+
+      const result = await postPullRequestDigestComment({
+        token: githubToken,
+        githubUrl: membership.project.githubUrl,
+        prNumber: input.prNumber,
+        body,
+      });
+
+      return {
+        ...result,
+        prUrl: `${membership.project.githubUrl.replace(/\.git$/, "").replace(/\/$/, "")}/pull/${input.prNumber}`,
+      };
+    }),
+
   getOverview: protectedProcedure
     .input(z.object({ projectId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
@@ -866,6 +945,162 @@ export const projectRouter = createTRPCRouter({
       }
 
       return meeting;
+    }),
+
+  createGithubIssueFromMeetingIssue: protectedProcedure
+    .input(z.object({ issueId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const issue = await ctx.db.issue.findFirst({
+        where: {
+          id: input.issueId,
+          meeting: {
+            project: {
+              deletedAt: null,
+              userToProjects: {
+                some: { userId: ctx.user.userId! },
+              },
+            },
+          },
+        },
+        include: {
+          meeting: {
+            include: {
+              project: true,
+            },
+          },
+        },
+      });
+
+      if (!issue) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Meeting issue not found",
+        });
+      }
+
+      await requireProjectMember(
+        ctx.db,
+        issue.meeting.projectId,
+        ctx.user.userId!,
+      );
+
+      if (issue.githubIssueUrl && issue.githubIssueNumber != null) {
+        return {
+          number: issue.githubIssueNumber,
+          url: issue.githubIssueUrl,
+          alreadyCreated: true as const,
+        };
+      }
+
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      const title = issue.gist.trim() || issue.headline.trim() || "Meeting issue";
+      const body = buildMeetingIssueBody({
+        summary: issue.summary,
+        start: issue.start,
+        end: issue.end,
+        meetingName: issue.meeting.name,
+        meetingId: issue.meetingId,
+        headline: issue.headline,
+      });
+
+      const created = await createGithubIssueFromChapter({
+        token: githubToken,
+        githubUrl: issue.meeting.project.githubUrl,
+        title,
+        body,
+      });
+
+      await ctx.db.issue.update({
+        where: { id: issue.id },
+        data: {
+          githubIssueNumber: created.number,
+          githubIssueUrl: created.url,
+        },
+      });
+
+      return {
+        number: created.number,
+        url: created.url,
+        alreadyCreated: false as const,
+      };
+    }),
+
+  listGithubTags: protectedProcedure
+    .input(z.object({ projectId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const githubToken = await resolveProjectGithubToken(input.projectId);
+      return await listRepoTags(githubToken ?? "", membership.project.githubUrl);
+    }),
+
+  generateChangelog: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        baseTag: z.string().min(1),
+        headTag: z.string().min(1).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const project = membership.project;
+      const githubToken = await resolveProjectGithubToken(input.projectId);
+      const head =
+        input.headTag?.trim() ||
+        project.activeBranch ||
+        project.defaultBranch ||
+        "HEAD";
+
+      const draft = await buildChangelogBetweenRefs({
+        token: githubToken ?? "",
+        githubUrl: project.githubUrl,
+        base: input.baseTag,
+        head,
+      });
+
+      const notes = await summariseChangelog({
+        repo: project.githubUrl,
+        base: draft.base,
+        head: draft.head,
+        commits: draft.commits,
+        pulls: draft.pulls,
+      });
+
+      return { ...draft, notes };
+    }),
+
+  createDraftGithubRelease: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        tag: z.string().min(1),
+        name: z.string().min(1),
+        body: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const membership = await requireProjectMember(
+        ctx.db,
+        input.projectId,
+        ctx.user.userId!,
+      );
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+
+      return await createDraftRelease({
+        token: githubToken,
+        githubUrl: membership.project.githubUrl,
+        tag: input.tag,
+        name: input.name,
+        body: input.body,
+      });
     }),
 
   deleteMeeting: protectedProcedure

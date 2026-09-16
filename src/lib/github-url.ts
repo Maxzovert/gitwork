@@ -29,3 +29,55 @@ export function getAppUrl() {
   }
   return "http://localhost:3000";
 }
+
+function encodePathSegments(path: string) {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+export function githubBlobUrl(
+  cleanedRepoUrl: string,
+  branch: string,
+  path: string,
+) {
+  const ref = encodeURIComponent(branch || "HEAD");
+  const filePath = encodePathSegments(path);
+  return `${cleanedRepoUrl}/blob/${ref}/${filePath}`;
+}
+
+export function githubCommitUrl(cleanedRepoUrl: string, sha: string) {
+  return `${cleanedRepoUrl}/commit/${encodeURIComponent(sha)}`;
+}
+
+export function githubCompareUrl(
+  cleanedRepoUrl: string,
+  base: string,
+  head: string,
+) {
+  return `${cleanedRepoUrl}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
+}
+
+export function githubPullUrl(cleanedRepoUrl: string, number: number) {
+  return `${cleanedRepoUrl}/pull/${number}`;
+}
+
+export function githubNewIssueUrl(
+  cleanedRepoUrl: string,
+  params?: { title?: string; body?: string },
+) {
+  const search = new URLSearchParams();
+  if (params?.title) search.set("title", params.title);
+  if (params?.body) search.set("body", params.body);
+  const query = search.toString();
+  return `${cleanedRepoUrl}/issues/new${query ? `?${query}` : ""}`;
+}
+
+export function branchFromPushRef(ref: string) {
+  if (ref.startsWith("refs/heads/")) {
+    return ref.slice("refs/heads/".length);
+  }
+  return null;
+}

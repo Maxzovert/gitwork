@@ -257,3 +257,61 @@ export async function buildPullRequestDigest(
     changedSinceLastWeek,
   };
 }
+
+export function buildPullRequestDigestReviewBody(params: {
+  title: string;
+  summary: string;
+  riskLevel: "low" | "medium" | "high";
+  riskAreas: string[];
+  reviewerFocus: string[];
+}) {
+  const lines = [
+    `## Gitwork PR digest`,
+    "",
+    `**${params.title}**`,
+    "",
+    params.summary.trim(),
+    "",
+    `**Risk:** ${params.riskLevel}`,
+  ];
+
+  if (params.riskAreas.length) {
+    lines.push("", "**Risk areas**");
+    for (const area of params.riskAreas) {
+      lines.push(`- ${area}`);
+    }
+  }
+
+  if (params.reviewerFocus.length) {
+    lines.push("", "**Reviewer focus**");
+    for (const item of params.reviewerFocus) {
+      lines.push(`- ${item}`);
+    }
+  }
+
+  lines.push("", "_Posted from Gitwork_");
+  return lines.join("\n");
+}
+
+export async function postPullRequestDigestComment(params: {
+  token: string;
+  githubUrl: string;
+  prNumber: number;
+  body: string;
+}) {
+  const { owner, repo } = parseGithubUrl(params.githubUrl);
+  const octokit = createGithubClient(params.token);
+
+  const { data } = await octokit.rest.pulls.createReview({
+    owner,
+    repo,
+    pull_number: params.prNumber,
+    event: "COMMENT",
+    body: params.body,
+  });
+
+  return {
+    id: data.id,
+    htmlUrl: data.html_url ?? null,
+  };
+}

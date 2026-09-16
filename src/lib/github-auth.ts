@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 
 import { db } from "@/server/db";
 import { GITHUB_REPO_SCOPES } from "@/lib/github-scopes";
+import { getStoredGithubPat } from "@/server/api/routers/settings";
 
 export { GITHUB_REPO_SCOPES };
 
@@ -52,6 +53,10 @@ export async function getUserGithubToken(clerkUserId: string) {
 }
 
 export async function requireUserGithubToken(clerkUserId: string) {
+  // Prefer an explicit Settings PAT over Clerk OAuth / env fallback.
+  const stored = await getStoredGithubPat(db, clerkUserId);
+  if (stored) return stored;
+
   const token = await getUserGithubToken(clerkUserId);
   if (token) return token;
 
@@ -62,11 +67,11 @@ export async function requireUserGithubToken(clerkUserId: string) {
   throw new TRPCError({
     code: "PRECONDITION_FAILED",
     message:
-      "Connect your GitHub account to continue. Open Create Project and authorize GitHub with repository access.",
+      "Connect your GitHub account or add a GitHub token in Settings to continue.",
   });
 }
 
-/** Prefer an override, then the project owner's OAuth token, then env fallback. */
+/** Prefer an override, then Settings PAT, then OAuth, then env fallback. */
 export async function resolveProjectGithubToken(
   projectId: string,
   overrideToken?: string | null,
@@ -81,6 +86,9 @@ export async function resolveProjectGithubToken(
   });
 
   if (owner?.userId) {
+    const stored = await getStoredGithubPat(db, owner.userId);
+    if (stored) return stored;
+
     const token = await getUserGithubToken(owner.userId);
     if (token) return token;
   }
@@ -123,20 +131,24 @@ export async function getGithubConnectionStatus(clerkUserId: string) {
     (item) => item.provider === "github",
   );
 
-  const token = await getUserGithubToken(clerkUserId);
+  const storedPat = await getStoredGithubPat(db, clerkUserId);
+  const oauthToken = storedPat ? null : await getUserGithubToken(clerkUserId);
+  const effectiveToken = storedPat ?? oauthToken;
   const envFallback = Boolean(process.env.GITHUB_TOKEN?.trim());
   const approvedScopes = account?.approvedScopes?.split(" ").filter(Boolean) ?? [];
   const hasRepoScope =
     approvedScopes.includes("repo") ||
     approvedScopes.includes("public_repo") ||
+    Boolean(storedPat) ||
     envFallback;
 
   return {
-    connected: Boolean(account) || envFallback,
+    connected: Boolean(account) || Boolean(storedPat) || envFallback,
     username: account?.username ?? null,
-    hasToken: Boolean(token) || envFallback,
-    hasRepoScope: hasRepoScope || Boolean(token) || envFallback,
+    hasToken: Boolean(effectiveToken) || envFallback,
+    hasRepoScope: hasRepoScope || Boolean(effectiveToken) || envFallback,
     approvedScopes,
-    usingServerFallback: envFallback && !token,
+    usingServerFallback: envFallback && !effectiveToken,
+    usingSettingsPat: Boolean(storedPat),
   };
 }

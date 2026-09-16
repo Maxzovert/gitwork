@@ -1,57 +1,58 @@
 # Gitwork — Feature Roadmap
 
-Ideas that build on the existing three pillars: **commit summaries**, **codebase Q&A**, and **meeting → issues**.
+Ideas that build on the shipped workspace: **branch-aware codebase Q&A**, **project overviews**, **commit summaries**, **meeting → GitHub issues**, **PR digests**, **release drafting**, and **team collaboration**.
 
-## Highest leverage (close existing gaps)
+## Shipped
 
-1. **Push meeting “issues” to GitHub**  
-   Chapters already look like tickets. One-click create GitHub Issues (with links back) so meetings drive shipping.
+- GitHub Issue export from meeting chapters
+- Owner/member team invites and shared project history
+- Push webhooks for commit sync and automatic active-branch re-indexing
+- PR review digests with risk callouts
+- Branch picker, indexing progress, and branch-scoped embeddings
+- Beginner project overview generated from repository docs and indexed code
+- AI changelogs between Git refs and draft GitHub Release creation
+- Notification preferences and encrypted per-user API-token storage
 
-2. **Credits / usage metering**  
-   `User.credits` exists but isn’t used. Meter Q&A, indexing, and meeting processing; add a free tier + Stripe later.
+Repository indexing currently caps selection at **150 files** per run.
 
-3. **Team invites & roles**  
-   `userToProject` is already there. Add invite links, owner/member roles, and shared Q&A + meeting history.
+## Highest leverage (next)
 
-4. **Live commit sync (webhooks)**  
-   Replace “last 15 on load” with GitHub webhooks so the timeline stays fresh without refreshing.
+1. **Credits / usage metering**
+   `User.credits` exists but isn’t used. Meter Q&A, indexing, overview generation, meeting processing, digests, and changelogs; add a free tier and billing later.
 
-## Deepen the 3 features
+2. **Multi-turn Q&A chat**
+   Support follow-ups such as “show me the auth middleware” → “where is that called?” while preserving branch and file context.
 
-5. **PR / review digests**  
-   AI summary of open PRs, risk areas, and “what changed since last week.”
+3. **Incremental indexing**
+   Re-embed only changed, added, or deleted files after a push instead of rebuilding the selected branch.
 
-6. **Multi-turn Q&A chat**  
-   Follow-ups like “show me the auth middleware” → “where is that called?” instead of one-shot asks.
+## Deepen existing features
 
-7. **Better indexing**  
-   Branch picker, progress UI, incremental re-index, raise the ~50-file cap for bigger repos.
+4. **Meeting transcript + audio sync**
+   Add a full transcript, clickable timestamps, and playback tied to chapter cards.
 
-8. **Meeting transcript + audio sync**  
-   Full transcript, clickable timestamps, playback tied to chapter cards.
+5. **Saved answers → docs/wiki**
+   Export Q&As to a project wiki, Notion, or a `docs/` pull request so answers do not remain isolated in history.
 
-9. **Saved answers → docs/wiki**  
-   Export Q&As to a project wiki, Notion, or a `docs/` PR so answers don’t die in history.
+6. **Release history inside Gitwork**
+   Persist generated changelogs and draft-release links so teams can revisit earlier release work.
+
+7. **Actionable notifications**
+   Deliver the existing commit, meeting, and indexing preferences through email or an in-app notification center.
 
 ## Differentiating product ideas
 
-10. **Onboarding brief for new contributors**  
-    Auto-generate “how this repo works” from embeddings + recent commits.
+8. **“What broke?” / incident mode**
+   Point at a deploy commit or error message; retrieve related files, recent commits, and related meetings.
 
-11. **“What broke?” / incident mode**  
-    Point at a deploy commit or error message; retrieve related files, recent commits, and related meetings.
+9. **Architecture map**
+   Visual graph of modules from embeddings (entry points, dependencies, hotspots) with click-through to Q&A.
 
-12. **Architecture map**  
-    Visual graph of modules from embeddings (entrypoints, deps, hotspots) with click-through to Q&A.
+10. **Slack / Discord digest**
+    Send a daily summary of shipped work and unresolved meeting questions to the team channel.
 
-13. **Changelog / release notes generator**  
-    From commits + PR titles between tags.
+## Suggested build order
 
-14. **Slack / Discord digest**  
-    Daily “what shipped + open questions from meetings” into the team channel.
-
-## Suggested build order (next 2–3)
-
-1. GitHub Issue export from meetings — makes meetings actionable  
-2. Webhooks for commits — makes the timeline reliable  
-3. Multi-turn Q&A **or** team invites — depending on solo vs team focus
+1. Incremental indexing
+2. Multi-turn Q&A
+3. Usage metering
