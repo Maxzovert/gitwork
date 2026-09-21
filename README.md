@@ -238,7 +238,7 @@ Builds run on **GitHub Actions** (~7 GB RAM), then upload a prebuilt artifact to
    | `VERCEL_ORG_ID` | `orgId` from `.vercel/project.json` |
    | `VERCEL_PROJECT_ID` | `projectId` from `.vercel/project.json` |
 
-4. **Set app env vars on the Vercel project** (Production): same as local — `DATABASE_URL`, Clerk keys, `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, Cloudinary `NEXT_PUBLIC_*`, `APP_URL` (your production URL). Ensure Postgres has `pgvector`; run `npm run db:push` against prod once.
+4. **Set app env vars on the Vercel project** (Production): same as local — `DATABASE_URL`, `DIRECT_URL`, Clerk **production** keys (`pk_live_` / `sk_live_`), `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, Cloudinary `NEXT_PUBLIC_*`, `APP_URL` (your production URL). For Neon, use the pooler URL with `pgbouncer=true` as `DATABASE_URL` and the non-pooler host as `DIRECT_URL`. Ensure Postgres has `pgvector`; run `npm run db:push` against prod once.
 
 5. **Push to `main`** (or run **Deploy to Vercel** via Actions → Run workflow). The job logs print the production URL.
 

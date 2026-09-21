@@ -7,9 +7,12 @@ generator client {
 }
 
 datasource db {
-    provider   = "postgresql"
-    url        = env("DATABASE_URL")
-    extensions = [vector]
+    provider  = "postgresql"
+    url       = env("DATABASE_URL")
+    // Neon/Vercel: point DIRECT_URL at the non-pooler host for migrate/db push.
+    // DATABASE_URL should use the pooler with ?pgbouncer=true.
+    directUrl   = env("DIRECT_URL")
+    extensions  = [vector]
 }
 
 enum ProjectRole {
