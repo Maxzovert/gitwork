@@ -47,7 +47,6 @@ export const getCommitHashes = async (
 export async function ingestCommits(
   projectId: string,
   commits: CommitInput[],
-  _githubToken?: string,
 ) {
   await fetchProjectGithubUrl(projectId);
   const unprocessedCommits = await filterUnprocessedCommits(
@@ -90,8 +89,7 @@ export async function ingestPushCommits(
   projectId: string,
   commits: GithubPushCommit[],
 ) {
-  const githubToken = await resolveProjectGithubToken(projectId);
-  return ingestCommits(projectId, mapPushCommits(commits), githubToken);
+  return ingestCommits(projectId, mapPushCommits(commits));
 }
 
 /** One-time backfill when a project is created. */
@@ -103,7 +101,7 @@ export const pullCommits = async (
   const token =
     githubToken ?? (await resolveProjectGithubToken(projectId));
   const commitHashes = await getCommitHashes(githubUrl, token);
-  return ingestCommits(projectId, commitHashes, token);
+  return ingestCommits(projectId, commitHashes);
 };
 
 function commitSubject(message: string) {
