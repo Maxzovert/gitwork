@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FolderGit2,
   GitBranch,
+  Github,
   Loader2,
   Workflow,
 } from "lucide-react";
@@ -25,6 +26,9 @@ import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 
 const CREATE_STEP_KEY = "gitwork-create-step";
+const CREATE_SKIPPED_CONNECT_KEY = "gitwork-create-skipped-connect";
+const CREATE_FORCE_CONNECT_KEY = "gitwork-create-force-connect";
+const STATUS_POLL_MS = 8_000;
 
 type FormInput = {
   repoUrl: string;
@@ -36,6 +40,10 @@ const ONBOARDING_STEPS = [
   {
     title: "Welcome",
     description: "Connect a repository and let Gitwork build your project context.",
+  },
+  {
+    title: "Connect GitHub",
+    description: "Authorize GitHub so Gitwork can list repos, index code, and sync commits.",
   },
   {
     title: "Repository",
@@ -131,6 +139,24 @@ function getFriendlyGitHubError(message: string) {
   return message || "Project creation failed";
 }
 
+function readSessionFlag(key: string) {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionFlag(key: string, value: boolean) {
+  try {
+    if (value) sessionStorage.setItem(key, "1");
+    else sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export function CreateProjectOnboarding() {
   const router = useRouter();
   const root = useRef<HTMLDivElement>(null);
@@ -138,9 +164,17 @@ export function CreateProjectOnboarding() {
     if (typeof window === "undefined") return 1;
     const saved = Number(sessionStorage.getItem(CREATE_STEP_KEY) || "1");
     const n = Number.isFinite(saved) ? saved : 1;
+    // Old 3-step sessions: clamp into the new 1–4 range without inventing a blank step.
     return n >= 1 && n <= ONBOARDING_STEPS.length ? n : 1;
   });
   const [repoFilter, setRepoFilter] = React.useState("");
+  const [skippedConnect, setSkippedConnect] = React.useState(() =>
+    readSessionFlag(CREATE_SKIPPED_CONNECT_KEY),
+  );
+  const [forceConnectStay, setForceConnectStay] = React.useState(() =>
+    readSessionFlag(CREATE_FORCE_CONNECT_KEY),
+  );
+  const [statusPollTimedOut, setStatusPollTimedOut] = React.useState(false);
   const { register, handleSubmit, watch, setValue } = useForm<FormInput>({
     defaultValues: {
       projectName: "",
@@ -168,22 +202,24 @@ export function CreateProjectOnboarding() {
   const signedInWithGithub = Boolean(githubStatus.data?.signedInWithGithub);
   const githubReady = Boolean(githubStatus.data?.hasToken);
   const githubStatusLoading = githubStatus.isLoading && !githubStatus.data;
-  const step2FieldsValid =
-    Boolean(projectName?.trim()) && repoUrlValid;
+  const githubStatusSettled =
+    Boolean(githubStatus.data) || statusPollTimedOut || !githubStatus.isFetching;
+  const repoFieldsValid = Boolean(projectName?.trim()) && repoUrlValid;
+
   const canContinue =
-    !githubStatusLoading &&
-    (githubReady || (step === 1 && signedInWithGithub)) &&
-    (step === 1 || (step === 2 && step2FieldsValid));
+    step === 1 ||
+    (step === 2 && (githubReady || skippedConnect || statusPollTimedOut)) ||
+    (step === 3 && repoFieldsValid);
 
   const reposQuery = api.project.listGithubRepos.useQuery(undefined, {
-    enabled: githubReady && step === 2,
+    enabled: githubReady && step === 3,
     retry: false,
   });
 
   const branchesQuery = api.project.getBranches.useQuery(
     { githubUrl: trimmedRepoUrl },
     {
-      enabled: step === 3 && repoUrlValid && githubReady,
+      enabled: step === 4 && repoUrlValid && githubReady,
       retry: false,
     },
   );
@@ -197,14 +233,43 @@ export function CreateProjectOnboarding() {
   }, [step]);
 
   React.useEffect(() => {
-    if (!signedInWithGithub || githubReady || githubStatusLoading) return;
-    void utils.project.getGithubStatus.invalidate();
-  }, [
-    signedInWithGithub,
-    githubReady,
-    githubStatusLoading,
-    utils.project.getGithubStatus,
-  ]);
+    writeSessionFlag(CREATE_SKIPPED_CONNECT_KEY, skippedConnect);
+  }, [skippedConnect]);
+
+  React.useEffect(() => {
+    writeSessionFlag(CREATE_FORCE_CONNECT_KEY, forceConnectStay);
+  }, [forceConnectStay]);
+
+  // On Connect: poll status until token is ready or timeout (~8s).
+  React.useEffect(() => {
+    if (step !== 2) {
+      setStatusPollTimedOut(false);
+      return;
+    }
+    if (githubReady) {
+      setStatusPollTimedOut(false);
+      return;
+    }
+
+    setStatusPollTimedOut(false);
+    const started = Date.now();
+    const tick = window.setInterval(() => {
+      void utils.project.getGithubStatus.invalidate();
+      if (Date.now() - started >= STATUS_POLL_MS) {
+        setStatusPollTimedOut(true);
+        window.clearInterval(tick);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(tick);
+  }, [step, githubReady, utils.project.getGithubStatus]);
+
+  // Auto-advance Connect → Repository once token is ready (unless user forced stay via Back).
+  React.useEffect(() => {
+    if (step !== 2) return;
+    if (!githubReady || forceConnectStay || skippedConnect) return;
+    setStep(3);
+  }, [step, githubReady, forceConnectStay, skippedConnect]);
 
   React.useEffect(() => {
     if (!branch && branchesQuery.data?.defaultBranch) {
@@ -268,6 +333,12 @@ export function CreateProjectOnboarding() {
     }
   }
 
+  function skipConnect() {
+    setSkippedConnect(true);
+    setForceConnectStay(false);
+    setStep(3);
+  }
+
   function goBack() {
     if (step === 1) {
       if (hasExistingProjects) {
@@ -276,44 +347,51 @@ export function CreateProjectOnboarding() {
       return;
     }
 
+    if (step === 3) {
+      // Returning to Connect — disable auto-skip until they leave again.
+      setForceConnectStay(true);
+    }
+
     setStep((current) => Math.max(current - 1, 1));
   }
 
   function goNext() {
-    if (githubStatusLoading) {
-      return;
-    }
-
     if (step === 1) {
-      if (!githubReady && !signedInWithGithub) {
-        toast.error(
-          "Connect GitHub or add a token in Settings before continuing.",
-        );
-        return;
-      }
+      setForceConnectStay(false);
       setStep(2);
       return;
     }
 
-    if (!githubReady) {
+    if (step === 2) {
+      if (githubReady) {
+        setSkippedConnect(false);
+        setForceConnectStay(false);
+        setStep(3);
+        return;
+      }
+      if (skippedConnect || statusPollTimedOut) {
+        skipConnect();
+        return;
+      }
       toast.error(
-        "GitHub repository access is not ready yet. Add a token in Settings or try again in a moment.",
+        "Connect GitHub, add a token in Settings, or skip for now to paste a repo URL.",
       );
       return;
     }
 
-    if (step === 2) {
+    if (step === 3) {
       if (!projectName?.trim()) {
         toast.error("Add a project name to continue.");
         return;
       }
       if (!repoUrlValid) {
-        toast.error("Enter a valid GitHub repository URL like https://github.com/org/repo.");
+        toast.error(
+          "Enter a valid GitHub repository URL like https://github.com/org/repo.",
+        );
         return;
       }
+      setStep(4);
     }
-
-    setStep((current) => Math.min(current + 1, ONBOARDING_STEPS.length));
   }
 
   function onSubmit(data: FormInput) {
@@ -324,7 +402,7 @@ export function CreateProjectOnboarding() {
 
     if (!githubReady) {
       toast.error(
-        "GitHub access is not configured. Add GITHUB_TOKEN on the server or a token in Settings.",
+        "GitHub access is required to create a project. Connect GitHub or add a token in Settings.",
       );
       return;
     }
@@ -348,6 +426,8 @@ export function CreateProjectOnboarding() {
           toast.success("Project created successfully");
           try {
             sessionStorage.removeItem(CREATE_STEP_KEY);
+            sessionStorage.removeItem(CREATE_SKIPPED_CONNECT_KEY);
+            sessionStorage.removeItem(CREATE_FORCE_CONNECT_KEY);
           } catch {
             // ignore
           }
@@ -384,6 +464,9 @@ export function CreateProjectOnboarding() {
         (repo.description?.toLowerCase().includes(q) ?? false)
       );
     }) ?? [];
+
+  const connectPolling =
+    step === 2 && !githubReady && !statusPollTimedOut && (githubStatusLoading || githubStatus.isFetching || !githubStatusSettled);
 
   return (
     <div
@@ -451,7 +534,6 @@ export function CreateProjectOnboarding() {
                 href={hasExistingProjects ? "/projects" : "/create"}
                 className="inline-flex transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 onClick={(e) => {
-                  // New users stay in onboarding — logo is branding, not a skip.
                   if (!hasExistingProjects) e.preventDefault();
                 }}
               >
@@ -463,7 +545,7 @@ export function CreateProjectOnboarding() {
               <p className="text-[11px] font-bold tracking-[0.18em] text-[#696969] uppercase">
                 New project
               </p>
-              <h1 className="mt-3 max-w-[11rem] font-display text-5xl leading-[1.05] tracking-[-0.045em] text-[#141413] sm:max-w-[13rem] sm:text-6xl lg:text-[4rem]">
+              <h1 className="mt-3 max-w-[14rem] font-display text-5xl leading-[1.05] tracking-[-0.045em] text-[#141413] sm:max-w-[16rem] sm:text-6xl lg:text-[3.75rem]">
                 {stepMeta.title}
               </h1>
               <p className="mt-4 max-w-[22rem] text-[15px] leading-7 text-[#696969] sm:text-base">
@@ -586,10 +668,31 @@ export function CreateProjectOnboarding() {
                       </div>
                     </li>
                   </ul>
-                  {githubStatusLoading ? (
+                </div>
+              ) : null}
+
+              {step === 2 ? (
+                <div className="space-y-6">
+                  <div className="flex items-start gap-4">
+                    <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#141413] text-[#f3f0ee]">
+                      <Github className="size-5" />
+                    </span>
+                    <div>
+                      <p className="font-display text-lg tracking-[-0.02em] text-[#141413]">
+                        GitHub access
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-[#696969]">
+                        Required to list repositories, load branches, index code, and sync
+                        commits. You can skip and paste a URL — create still needs a token.
+                      </p>
+                    </div>
+                  </div>
+
+                  {connectPolling ? (
                     <p className="flex items-center gap-2 border-l-2 border-[#d1cdc7] pl-4 text-sm leading-6 text-[#696969]">
                       <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                      Checking GitHub access…
+                      Checking GitHub access
+                      {signedInWithGithub ? " after your GitHub sign-in" : ""}…
                     </p>
                   ) : githubReady ? (
                     <p className="border-l-2 border-[#3860be]/50 pl-4 text-sm leading-6 text-[#696969]">
@@ -597,26 +700,19 @@ export function CreateProjectOnboarding() {
                       {githubStatus.data?.username
                         ? ` (@${githubStatus.data.username})`
                         : ""}
-                      . Continue to add your repository.
-                    </p>
-                  ) : signedInWithGithub ? (
-                    <p className="border-l-2 border-[#3860be]/50 pl-4 text-sm leading-6 text-[#696969]">
-                      You signed in with GitHub
-                      {githubStatus.data?.username
-                        ? ` (@${githubStatus.data.username})`
-                        : ""}
-                      . Continue to pick a repository — no extra connect step
-                      needed.
+                      . Continue to pick a repository.
                     </p>
                   ) : (
                     <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
                       <p className="font-medium text-[#141413]">
-                        Connect GitHub to continue
+                        {signedInWithGithub
+                          ? "Signed in with GitHub, but repo access is not ready"
+                          : "Connect GitHub to continue"}
                       </p>
                       <p>
-                        Gitwork needs GitHub API access to list branches, index
-                        code, and sync commits. Connect your account or add a
-                        Personal Access Token in Settings.
+                        {signedInWithGithub
+                          ? "Auth0 could not issue a GitHub API token yet (Token Vault / Offline Access). Reconnect with repo scope, add a PAT in Settings, or skip and paste a repository URL."
+                          : "Connect your account or add a Personal Access Token in Settings. You can also skip and paste a repo URL for now."}
                       </p>
                       <div className="flex flex-wrap gap-2 pt-1">
                         <Button
@@ -625,7 +721,9 @@ export function CreateProjectOnboarding() {
                           className="h-10 rounded-xl"
                           asChild
                         >
-                          <a href={githubConnectHref()}>Connect GitHub</a>
+                          <a href={githubConnectHref()}>
+                            {signedInWithGithub ? "Reconnect GitHub" : "Connect GitHub"}
+                          </a>
                         </Button>
                         <Button
                           type="button"
@@ -635,13 +733,21 @@ export function CreateProjectOnboarding() {
                         >
                           <Link href="/settings">Add token in Settings</Link>
                         </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-10 rounded-xl text-[#696969]"
+                          onClick={skipConnect}
+                        >
+                          Skip for now
+                        </Button>
                       </div>
                     </div>
                   )}
                 </div>
               ) : null}
 
-              {step === 2 ? (
+              {step === 3 ? (
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <label
@@ -686,52 +792,69 @@ export function CreateProjectOnboarding() {
                         <Loader2 className="size-3.5 animate-spin text-[#696969]" />
                       ) : null}
                     </div>
+
                     {!githubReady ? (
                       <div className="rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
-                        {signedInWithGithub ? (
-                          <>
-                            GitHub repository access is still loading. You can
-                            paste a repo URL above, or add a token in{" "}
-                            <Link
-                              href="/settings"
-                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                            >
-                              Settings
-                            </Link>
-                            .
-                          </>
-                        ) : (
-                          <>
-                            GitHub is not connected.{" "}
-                            <a
-                              href={githubConnectHref()}
-                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                            >
-                              Connect GitHub
-                            </a>{" "}
-                            or add a token in{" "}
-                            <Link
-                              href="/settings"
-                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                            >
-                              Settings
-                            </Link>{" "}
-                            before you can continue.
-                          </>
-                        )}
+                        Repo list needs GitHub API access. Paste a URL above to continue, or{" "}
+                        <a
+                          href={githubConnectHref()}
+                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                        >
+                          reconnect GitHub
+                        </a>{" "}
+                        / add a token in{" "}
+                        <Link
+                          href="/settings"
+                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                        >
+                          Settings
+                        </Link>
+                        .
                       </div>
                     ) : null}
+
+                    {githubReady && reposQuery.error ? (
+                      <div className="space-y-2 rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
+                        <p className="text-[#9a3a0a]">
+                          {getFriendlyGitHubError(reposQuery.error.message)}
+                        </p>
+                        <p>Paste a repository URL above to continue, or reconnect.</p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-9 rounded-xl border-[#d1cdc7]"
+                            asChild
+                          >
+                            <a href={githubConnectHref()}>Reconnect GitHub</a>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-9 rounded-xl text-[#696969]"
+                            onClick={() => void reposQuery.refetch()}
+                          >
+                            Retry list
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
                     <Input
                       value={repoFilter}
                       onChange={(event) => setRepoFilter(event.target.value)}
                       placeholder="Filter repos…"
                       className="h-10 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
-                      disabled={!githubReady}
+                      disabled={!githubReady || Boolean(reposQuery.error)}
                     />
                     <div className="max-h-48 overflow-y-auto rounded-xl border border-[#d1cdc7]/80 bg-[#fcfbfa]">
-                      {reposQuery.error ? (
-                        <p className="p-3 text-xs text-[#9a3a0a]">
-                          {getFriendlyGitHubError(reposQuery.error.message)}
+                      {!githubReady ? (
+                        <p className="p-3 text-xs text-[#696969]">
+                          Paste a URL above — browsing unlocks after GitHub access is ready.
+                        </p>
+                      ) : reposQuery.error ? (
+                        <p className="p-3 text-xs text-[#696969]">
+                          Could not load repositories. Use the URL field instead.
                         </p>
                       ) : filteredRepos.length ? (
                         <ul className="divide-y divide-[#d1cdc7]/70">
@@ -766,11 +889,9 @@ export function CreateProjectOnboarding() {
                         </ul>
                       ) : (
                         <p className="p-3 text-xs text-[#696969]">
-                          {!githubReady
-                            ? "Add GitHub access in Settings to browse repositories."
-                            : reposQuery.isLoading
-                              ? "Loading repositories…"
-                              : "No repositories found. Paste a URL above instead."}
+                          {reposQuery.isLoading
+                            ? "Loading repositories…"
+                            : "No repositories found. Paste a URL above instead."}
                         </p>
                       )}
                     </div>
@@ -778,7 +899,7 @@ export function CreateProjectOnboarding() {
                 </div>
               ) : null}
 
-              {step === 3 ? (
+              {step === 4 ? (
                 <div className="space-y-6">
                   <dl className="space-y-4 border-y border-[#d1cdc7]/80 py-5 text-sm">
                     <div className="flex items-start justify-between gap-4">
@@ -807,6 +928,35 @@ export function CreateProjectOnboarding() {
                     </div>
                   </dl>
 
+                  {!githubReady ? (
+                    <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
+                      <p className="font-medium text-[#141413]">
+                        Connect GitHub before creating
+                      </p>
+                      <p>
+                        Creating a project needs API access to index the repo and sync commits.
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="default"
+                          className="h-10 rounded-xl"
+                          asChild
+                        >
+                          <a href={githubConnectHref()}>Connect GitHub</a>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 rounded-xl border-[#d1cdc7]"
+                          asChild
+                        >
+                          <Link href="/settings">Add token in Settings</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-2">
                     <label
                       htmlFor="create-branch"
@@ -814,28 +964,34 @@ export function CreateProjectOnboarding() {
                     >
                       Branch
                     </label>
-                    <select
-                      id="create-branch"
-                      {...register("branch")}
-                      disabled={branchesQuery.isLoading || !branchesQuery.data?.branches.length}
-                      className="h-12 w-full rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] px-3 text-sm text-[#141413] disabled:opacity-60"
-                    >
-                      {branchesQuery.data?.branches?.length ? (
-                        branchesQuery.data.branches.map((branchName) => (
+                    {githubReady && branchesQuery.data?.branches?.length ? (
+                      <select
+                        id="create-branch"
+                        {...register("branch")}
+                        className="h-12 w-full rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] px-3 text-sm text-[#141413]"
+                      >
+                        {branchesQuery.data.branches.map((branchName) => (
                           <option key={branchName} value={branchName}>
                             {branchName}
                           </option>
-                        ))
-                      ) : (
-                        <option value="">
-                          {branchesQuery.isLoading
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        id="create-branch"
+                        {...register("branch")}
+                        placeholder={
+                          branchesQuery.isLoading
                             ? "Loading branches…"
-                            : "Select a valid repo to load branches"}
-                        </option>
-                      )}
-                    </select>
+                            : "e.g. main (optional — defaults on create)"
+                        }
+                        disabled={branchesQuery.isLoading}
+                        className="h-12 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
+                      />
+                    )}
                     <p className="text-xs leading-5 text-[#696969]">
-                      This branch becomes the first code snapshot for indexing, Q&amp;A, and commit context.
+                      This branch becomes the first code snapshot for indexing, Q&amp;A, and
+                      commit context.
                     </p>
                     {branchError ? (
                       <p className="text-xs text-[#9a3a0a]">{branchError}</p>
@@ -862,15 +1018,33 @@ export function CreateProjectOnboarding() {
               )}
 
               {step < ONBOARDING_STEPS.length ? (
-                <Button
-                  type="button"
-                  className="h-11 min-w-[9.5rem] shrink-0 rounded-xl"
-                  onClick={goNext}
-                  disabled={createProject.isPending || !canContinue}
-                >
-                  Continue
-                  <ChevronRight className="size-4" />
-                </Button>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {step === 2 && !githubReady ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl border-[#d1cdc7]"
+                      onClick={skipConnect}
+                      disabled={createProject.isPending}
+                    >
+                      Skip for now
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    className="h-11 min-w-[9.5rem] rounded-xl"
+                    onClick={goNext}
+                    disabled={
+                      createProject.isPending ||
+                      (step === 2 && !githubReady && !statusPollTimedOut && connectPolling) ||
+                      (step === 3 && !repoFieldsValid) ||
+                      (step !== 1 && step !== 2 && step !== 3 && !canContinue)
+                    }
+                  >
+                    Continue
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
               ) : (
                 <Button
                   type="submit"
