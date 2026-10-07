@@ -20,6 +20,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { GitworkLogo } from "@/components/gitwork-logo";
+import { OnboardingGithubPatForm } from "@/components/onboarding-github-pat-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useProjects from "@/hooks/use-projects";
@@ -337,6 +338,14 @@ export function CreateProjectOnboarding() {
     setSkippedConnect(true);
     setForceConnectStay(false);
     setStep(3);
+  }
+
+  function onPatSaved() {
+    setSkippedConnect(false);
+    setForceConnectStay(false);
+    setStatusPollTimedOut(false);
+    // Status invalidate runs in the PAT form; nudge auto-advance / list refresh.
+    void utils.project.getGithubStatus.refetch();
   }
 
   function goBack() {
@@ -683,7 +692,7 @@ export function CreateProjectOnboarding() {
                       </p>
                       <p className="mt-1 text-sm leading-6 text-[#696969]">
                         Required to list repositories, load branches, index code, and sync
-                        commits. You can skip and paste a URL — create still needs a token.
+                        commits. Connect OAuth, paste a PAT here, or skip and add a URL.
                       </p>
                     </div>
                   </div>
@@ -703,45 +712,42 @@ export function CreateProjectOnboarding() {
                       . Continue to pick a repository.
                     </p>
                   ) : (
-                    <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
-                      <p className="font-medium text-[#141413]">
-                        {signedInWithGithub
-                          ? "Signed in with GitHub, but repo access is not ready"
-                          : "Connect GitHub to continue"}
-                      </p>
-                      <p>
-                        {signedInWithGithub
-                          ? "Auth0 could not issue a GitHub API token yet (Token Vault / Offline Access). Reconnect with repo scope, add a PAT in Settings, or skip and paste a repository URL."
-                          : "Connect your account or add a Personal Access Token in Settings. You can also skip and paste a repo URL for now."}
-                      </p>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Button
-                          type="button"
-                          variant="default"
-                          className="h-10 rounded-xl"
-                          asChild
-                        >
-                          <a href={githubConnectHref()}>
-                            {signedInWithGithub ? "Reconnect GitHub" : "Connect GitHub"}
-                          </a>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-10 rounded-xl border-[#d1cdc7]"
-                          asChild
-                        >
-                          <Link href="/settings">Add token in Settings</Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="h-10 rounded-xl text-[#696969]"
-                          onClick={skipConnect}
-                        >
-                          Skip for now
-                        </Button>
+                    <div className="space-y-4">
+                      <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
+                        <p className="font-medium text-[#141413]">
+                          {signedInWithGithub
+                            ? "Signed in with GitHub, but repo access is not ready"
+                            : "Connect GitHub to continue"}
+                        </p>
+                        <p>
+                          {signedInWithGithub
+                            ? "Auth0 could not issue a GitHub API token yet. Reconnect with repo scope, paste a Personal Access Token below, or skip and paste a repository URL."
+                            : "Connect your account, paste a Personal Access Token below, or skip and paste a repo URL for now."}
+                        </p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="default"
+                            className="h-10 rounded-xl"
+                            asChild
+                          >
+                            <a href={githubConnectHref()}>
+                              {signedInWithGithub
+                                ? "Reconnect GitHub"
+                                : "Connect GitHub"}
+                            </a>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-10 rounded-xl text-[#696969]"
+                            onClick={skipConnect}
+                          >
+                            Skip for now
+                          </Button>
+                        </div>
                       </div>
+                      <OnboardingGithubPatForm onSaved={onPatSaved} />
                     </div>
                   )}
                 </div>
@@ -794,49 +800,51 @@ export function CreateProjectOnboarding() {
                     </div>
 
                     {!githubReady ? (
-                      <div className="rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
-                        Repo list needs GitHub API access. Paste a URL above to continue, or{" "}
-                        <a
-                          href={githubConnectHref()}
-                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                        >
-                          reconnect GitHub
-                        </a>{" "}
-                        / add a token in{" "}
-                        <Link
-                          href="/settings"
-                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                        >
-                          Settings
-                        </Link>
-                        .
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
+                          Repo list needs GitHub API access. Paste a URL above to continue,{" "}
+                          <a
+                            href={githubConnectHref()}
+                            className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                          >
+                            reconnect GitHub
+                          </a>
+                          , or add a token below.
+                        </div>
+                        <OnboardingGithubPatForm onSaved={onPatSaved} />
                       </div>
                     ) : null}
 
                     {githubReady && reposQuery.error ? (
-                      <div className="space-y-2 rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
-                        <p className="text-[#9a3a0a]">
-                          {getFriendlyGitHubError(reposQuery.error.message)}
-                        </p>
-                        <p>Paste a repository URL above to continue, or reconnect.</p>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-9 rounded-xl border-[#d1cdc7]"
-                            asChild
-                          >
-                            <a href={githubConnectHref()}>Reconnect GitHub</a>
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-9 rounded-xl text-[#696969]"
-                            onClick={() => void reposQuery.refetch()}
-                          >
-                            Retry list
-                          </Button>
+                      <div className="space-y-3">
+                        <div className="space-y-2 rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
+                          <p className="text-[#9a3a0a]">
+                            {getFriendlyGitHubError(reposQuery.error.message)}
+                          </p>
+                          <p>
+                            Paste a repository URL above, reconnect, or save a fresh PAT
+                            below.
+                          </p>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-9 rounded-xl border-[#d1cdc7]"
+                              asChild
+                            >
+                              <a href={githubConnectHref()}>Reconnect GitHub</a>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="h-9 rounded-xl text-[#696969]"
+                              onClick={() => void reposQuery.refetch()}
+                            >
+                              Retry list
+                            </Button>
+                          </div>
                         </div>
+                        <OnboardingGithubPatForm onSaved={onPatSaved} />
                       </div>
                     ) : null}
 
@@ -929,31 +937,27 @@ export function CreateProjectOnboarding() {
                   </dl>
 
                   {!githubReady ? (
-                    <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
-                      <p className="font-medium text-[#141413]">
-                        Connect GitHub before creating
-                      </p>
-                      <p>
-                        Creating a project needs API access to index the repo and sync commits.
-                      </p>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Button
-                          type="button"
-                          variant="default"
-                          className="h-10 rounded-xl"
-                          asChild
-                        >
-                          <a href={githubConnectHref()}>Connect GitHub</a>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-10 rounded-xl border-[#d1cdc7]"
-                          asChild
-                        >
-                          <Link href="/settings">Add token in Settings</Link>
-                        </Button>
+                    <div className="space-y-4">
+                      <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
+                        <p className="font-medium text-[#141413]">
+                          Connect GitHub before creating
+                        </p>
+                        <p>
+                          Creating a project needs API access to index the repo and sync
+                          commits. Connect OAuth or paste a PAT below.
+                        </p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button
+                            type="button"
+                            variant="default"
+                            className="h-10 rounded-xl"
+                            asChild
+                          >
+                            <a href={githubConnectHref()}>Connect GitHub</a>
+                          </Button>
+                        </div>
                       </div>
+                      <OnboardingGithubPatForm onSaved={onPatSaved} />
                     </div>
                   ) : null}
 
