@@ -157,7 +157,7 @@ export default function TeamPage() {
       <EmptyState
         icon={Users}
         title="Select a project"
-        description="Choose a project from the sidebar to manage its team."
+        description="Choose a project from Projects to manage its team."
       />
     );
   }

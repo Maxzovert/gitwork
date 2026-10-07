@@ -11,7 +11,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { db } from "@/server/db";
-import { auth } from "@clerk/nextjs/server";
+import { getSessionUser } from "@/lib/auth0";
 
 /**
  * 1. CONTEXT
@@ -82,20 +82,21 @@ export const createTRPCRouter = t.router;
  */
 
 const isAuthenticated = t.middleware(async ({ next, ctx }) => {
-  const user = await auth()
-  if(!user.userId){
+  const sessionUser = await getSessionUser();
+  if (!sessionUser?.userId) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
       message: "You must be logged in to do this",
-    })
+    });
   }
   return next({
     ctx: {
       ...ctx,
-      user
-    }
-  })
-})
+      // Keep `.userId` shape so routers stay unchanged.
+      user: { userId: sessionUser.userId },
+    },
+  });
+});
 const timingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
 

@@ -1,17 +1,18 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
-
+import { getSessionUser } from "@/lib/auth0";
 import { ensureDbUser } from "@/lib/ensure-user";
 import { db } from "@/server/db";
 
 export async function completeUserSync() {
-  const { userId } = await auth();
-  if (!userId) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser?.userId) {
     return "/sign-in";
   }
 
-  // Fast path: upsert without blocking on a full Clerk profile refresh.
+  const userId = sessionUser.userId;
+
+  // Fast path: upsert without blocking on a full profile refresh.
   await ensureDbUser();
 
   const projectCount = await db.userToProject.count({
@@ -21,5 +22,5 @@ export async function completeUserSync() {
     },
   });
 
-  return projectCount > 0 ? "/dashboard" : "/create";
+  return projectCount > 0 ? "/projects" : "/create";
 }

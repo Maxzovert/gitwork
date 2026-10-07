@@ -69,7 +69,7 @@ export default function ProjectOverviewPage() {
       <EmptyState
         icon={MapIcon}
         title="Select a project"
-        description="Choose a project from the sidebar to see a beginner overview."
+        description="Choose a project from Projects to see a beginner overview."
       />
     );
   }

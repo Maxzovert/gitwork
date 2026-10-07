@@ -2,9 +2,9 @@ import "@/styles/globals.css";
 
 import { type Metadata } from "next";
 import { Sofia_Sans } from "next/font/google";
+import { Auth0Provider } from "@auth0/nextjs-auth0";
 
 import { TRPCReactProvider } from "@/trpc/react";
-import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
@@ -25,14 +25,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={sofia.variable} suppressHydrationWarning>
       <body className="min-h-screen font-sans antialiased" suppressHydrationWarning>
-        <ClerkProvider
-          signInFallbackRedirectUrl="/sync-user"
-          signUpFallbackRedirectUrl="/sync-user"
-          afterSignOutUrl="/"
-        >
+        <Auth0Provider>
           <TRPCReactProvider>{children}</TRPCReactProvider>
           <Toaster richColors position="bottom-right" />
-        </ClerkProvider>
+        </Auth0Provider>
       </body>
     </html>
   );

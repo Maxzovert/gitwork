@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0";
 import { useRouter } from "next/navigation";
 
 import { WorkspaceLoader } from "@/components/workspace-loader";
@@ -18,14 +18,14 @@ const SYNC_TIMEOUT_MS = 12_000;
 
 export default function SyncUserPage() {
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { user, isLoading } = useUser();
   const [progress, setProgress] = useState(8);
   const [message, setMessage] = useState("Signing you in…");
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (isLoading) return;
 
-    if (!isSignedIn) {
+    if (!user) {
       router.replace("/sign-in");
       return;
     }
@@ -52,18 +52,17 @@ export default function SyncUserPage() {
     };
 
     const timeout = window.setTimeout(() => {
-      console.warn("completeUserSync timed out — continuing to dashboard");
-      finish("/dashboard");
+      console.warn("completeUserSync timed out — continuing to projects");
+      finish("/projects");
     }, SYNC_TIMEOUT_MS);
 
     void completeUserSync()
       .then((href) => {
-        // Never bounce an authenticated session onto <SignIn />
-        finish(href === "/sign-in" ? "/dashboard" : href);
+        finish(href === "/sign-in" ? "/projects" : href);
       })
       .catch((error) => {
         console.error("completeUserSync failed:", error);
-        finish("/dashboard");
+        finish("/projects");
       });
 
     return () => {
@@ -71,7 +70,7 @@ export default function SyncUserPage() {
       window.clearInterval(tick);
       window.clearTimeout(timeout);
     };
-  }, [isLoaded, isSignedIn, router]);
+  }, [isLoading, user, router]);
 
   return (
     <WorkspaceLoader

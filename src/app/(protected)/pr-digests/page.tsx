@@ -107,7 +107,7 @@ export default function PullRequestDigestsPage() {
         <EmptyState
           icon={GitPullRequestArrow}
           title="Select a project"
-          description="Choose a project from the sidebar to generate a PR digest."
+          description="Choose a project from Projects to generate a PR digest."
         />
       ) : !requested ? (
         <EmptyState

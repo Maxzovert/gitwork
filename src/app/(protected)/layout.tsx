@@ -1,15 +1,23 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { ensureDbUser } from "@/lib/ensure-user";
 import React from "react";
+import { redirect } from "next/navigation";
 import Appsidebar from "./app-sidebar";
 import { AppTopBar } from "@/components/app-top-bar";
 import { AppBootGate } from "@/components/app-boot-gate";
+import { getSessionUser } from "@/lib/auth0";
+
+export const dynamic = "force-dynamic";
 
 type Props = {
   children: React.ReactNode;
 };
 
 const SidebarLayout = async ({ children }: Props) => {
+  const user = await getSessionUser();
+  if (!user?.userId) {
+    redirect("/sign-in");
+  }
   await ensureDbUser();
 
   return (

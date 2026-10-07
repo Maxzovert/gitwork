@@ -50,7 +50,7 @@ const CommitLog = () => {
       <EmptyState
         icon={GitCommitHorizontal}
         title="Select a project"
-        description="Choose a project from the sidebar to view commits."
+        description="Choose a project from Projects to view commits."
       />
     );
   }

@@ -1,11 +1,11 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
 import { streamText } from "ai";
 import { createStreamableValue } from "@ai-sdk/rsc";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateEmbeddings } from "@/lib/gemini";
 import { backfillNullEmbeddings } from "@/lib/github-loader";
+import { getSessionUser } from "@/lib/auth0";
 import { db } from "@/server/db";
 
 const google = createGoogleGenerativeAI({
@@ -202,7 +202,8 @@ export async function askQuestion(
   projectId: string,
   branch?: string | null,
 ) {
-  const { userId } = await auth();
+  const sessionUser = await getSessionUser();
+  const userId = sessionUser?.userId;
   if (!userId) {
     throw new Error("Unauthorized");
   }

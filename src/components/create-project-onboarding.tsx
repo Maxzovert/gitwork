@@ -4,17 +4,14 @@ import React, { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
   ArrowRight,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   FolderGit2,
   GitBranch,
-  Github,
   Loader2,
   Workflow,
 } from "lucide-react";
@@ -22,12 +19,12 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { GitworkLogo } from "@/components/gitwork-logo";
-import { GithubTokenGuide } from "@/components/github-token-guide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useProjects from "@/hooks/use-projects";
-import { GITHUB_REPO_SCOPES } from "@/lib/github-scopes";
 import { api } from "@/trpc/react";
+
+const CREATE_STEP_KEY = "gitwork-create-step";
 
 type FormInput = {
   repoUrl: string;
@@ -41,13 +38,8 @@ const ONBOARDING_STEPS = [
     description: "Connect a repository and let Gitwork build your project context.",
   },
   {
-    title: "Connect GitHub",
-    description:
-      "Authorize with OAuth to read repos, or add a PAT in Settings for write actions.",
-  },
-  {
     title: "Repository",
-    description: "Name the project and choose a GitHub repository you can access.",
+    description: "Name the project and paste a GitHub repository URL you can access.",
   },
   {
     title: "Review",
@@ -78,12 +70,6 @@ const DECORATIVE_FLOATS = [
 
 const LOGO_FLOATS = [
   {
-    src: "/onboarding/github-logo.png",
-    className: "left-[6%] top-[42%] rotate-[5deg]",
-    width: 44,
-    height: 44,
-  },
-  {
     src: "/onboarding/teams-logo.png",
     className: "right-[7%] top-[38%] rotate-[-7deg]",
     width: 46,
@@ -91,7 +77,7 @@ const LOGO_FLOATS = [
   },
   {
     src: "/onboarding/meet-logo.png",
-    className: "left-[8%] bottom-[16%] rotate-[-6deg]",
+    className: "left-[4%] bottom-[14%] rotate-[-6deg]",
     width: 46,
     height: 46,
   },
@@ -105,6 +91,16 @@ const LOGO_FLOATS = [
 
 function isGithubRepoUrl(value: string) {
   return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/.test(value.trim());
+}
+
+const CREATE_GITHUB_RETURN = "/create";
+
+function githubConnectHref() {
+  const params = new URLSearchParams({
+    returnTo: CREATE_GITHUB_RETURN,
+    connection: "github",
+  });
+  return `/auth/login?${params.toString()}`;
 }
 
 function getFriendlyGitHubError(message: string) {
@@ -136,9 +132,12 @@ function getFriendlyGitHubError(message: string) {
 export function CreateProjectOnboarding() {
   const router = useRouter();
   const root = useRef<HTMLDivElement>(null);
-  const { user, isLoaded: userLoaded } = useUser();
-  const [step, setStep] = React.useState(1);
-  const [connecting, setConnecting] = React.useState(false);
+  const [step, setStep] = React.useState(() => {
+    if (typeof window === "undefined") return 1;
+    const saved = Number(sessionStorage.getItem(CREATE_STEP_KEY) || "1");
+    const n = Number.isFinite(saved) ? saved : 1;
+    return n >= 1 && n <= ONBOARDING_STEPS.length ? n : 1;
+  });
   const [repoFilter, setRepoFilter] = React.useState("");
   const { register, handleSubmit, watch, setValue } = useForm<FormInput>({
     defaultValues: {
@@ -163,34 +162,42 @@ export function CreateProjectOnboarding() {
   const trimmedRepoUrl = repoUrl?.trim() ?? "";
   const repoUrlValid = isGithubRepoUrl(trimmedRepoUrl);
   const hasExistingProjects = Boolean(projects?.length);
-  const githubReady = Boolean(
-    githubStatus.data?.connected && githubStatus.data?.hasToken,
-  );
+  const hasUserGithub = Boolean(githubStatus.data?.connected);
+  const githubReady = Boolean(githubStatus.data?.hasToken);
+  const githubStatusLoading = githubStatus.isLoading && !githubStatus.data;
+  const step2FieldsValid =
+    Boolean(projectName?.trim()) && repoUrlValid;
+  const canContinue =
+    !githubStatusLoading &&
+    githubReady &&
+    (step === 1 || (step === 2 && step2FieldsValid));
 
   const reposQuery = api.project.listGithubRepos.useQuery(undefined, {
-    enabled: githubReady && (step === 3 || step === 4),
+    enabled: githubReady && step === 2,
     retry: false,
   });
 
   const branchesQuery = api.project.getBranches.useQuery(
     { githubUrl: trimmedRepoUrl },
     {
-      enabled: step === 4 && repoUrlValid && githubReady,
+      enabled: step === 3 && repoUrlValid && githubReady,
       retry: false,
     },
   );
+
+  React.useEffect(() => {
+    try {
+      sessionStorage.setItem(CREATE_STEP_KEY, String(step));
+    } catch {
+      // ignore quota / private mode
+    }
+  }, [step]);
 
   React.useEffect(() => {
     if (!branch && branchesQuery.data?.defaultBranch) {
       setValue("branch", branchesQuery.data.defaultBranch);
     }
   }, [branch, branchesQuery.data?.defaultBranch, setValue]);
-
-  React.useEffect(() => {
-    if (step === 2 && githubReady) {
-      // Already authorized — skip friction on return from OAuth
-    }
-  }, [githubReady, step]);
 
   useGSAP(
     () => {
@@ -241,54 +248,6 @@ export function CreateProjectOnboarding() {
     );
   }, [step]);
 
-  async function connectGithub() {
-    if (!user) {
-      toast.error("Sign in first, then connect GitHub.");
-      return;
-    }
-
-    setConnecting(true);
-    try {
-      const redirectUrl = `${window.location.origin}/create`;
-      const existing = user.externalAccounts.find(
-        (account) => account.provider === "github",
-      );
-
-      if (existing) {
-        const reauth = await existing.reauthorize({
-          additionalScopes: [...GITHUB_REPO_SCOPES],
-          redirectUrl,
-        });
-        const url = reauth.verification?.externalVerificationRedirectURL;
-        if (url) {
-          window.location.href = url.href;
-          return;
-        }
-      } else {
-        const external = await user.createExternalAccount({
-          strategy: "oauth_github",
-          redirectUrl,
-          additionalScopes: [...GITHUB_REPO_SCOPES],
-        });
-        const url = external.verification?.externalVerificationRedirectURL;
-        if (url) {
-          window.location.href = url.href;
-          return;
-        }
-      }
-
-      await user.reload();
-      await utils.project.getGithubStatus.invalidate();
-      toast.success("GitHub connected.");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not start GitHub authorization.";
-      toast.error(message);
-    } finally {
-      setConnecting(false);
-    }
-  }
-
   function selectRepo(url: string, nameHint?: string) {
     setValue("repoUrl", url);
     if (!projectName?.trim() && nameHint) {
@@ -298,19 +257,33 @@ export function CreateProjectOnboarding() {
 
   function goBack() {
     if (step === 1) {
-      router.replace("/dashboard");
+      if (hasExistingProjects) {
+        router.replace("/projects");
+      }
       return;
     }
+
     setStep((current) => Math.max(current - 1, 1));
   }
 
   function goNext() {
-    if (step === 2 && !githubReady) {
-      toast.error("Connect GitHub before continuing.");
+    if (githubStatusLoading) {
       return;
     }
 
-    if (step === 3) {
+    if (!githubReady) {
+      toast.error(
+        "Connect GitHub or add a token in Settings before continuing.",
+      );
+      return;
+    }
+
+    if (step === 1) {
+      setStep(2);
+      return;
+    }
+
+    if (step === 2) {
       if (!projectName?.trim()) {
         toast.error("Add a project name to continue.");
         return;
@@ -331,7 +304,9 @@ export function CreateProjectOnboarding() {
     }
 
     if (!githubReady) {
-      toast.error("Connect GitHub before creating the project.");
+      toast.error(
+        "GitHub access is not configured. Add GITHUB_TOKEN on the server or a token in Settings.",
+      );
       return;
     }
     if (!data.projectName.trim()) {
@@ -352,12 +327,17 @@ export function CreateProjectOnboarding() {
       {
         onSuccess: (project) => {
           toast.success("Project created successfully");
+          try {
+            sessionStorage.removeItem(CREATE_STEP_KEY);
+          } catch {
+            // ignore
+          }
           if (project?.id) {
             setProjectId(project.id);
             utils.project.getProjects.setData(undefined, (prev) => {
               const list = prev ?? [];
               if (list.some((p) => p.id === project.id)) return list;
-              return [project, ...list];
+              return [{ ...project, role: "OWNER" as const }, ...list];
             });
           }
           void utils.project.getProjects.invalidate();
@@ -444,32 +424,27 @@ export function CreateProjectOnboarding() {
       <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <aside
           data-onboard-aside
-          className="flex flex-col justify-between px-6 pt-8 pb-6 sm:px-10 lg:px-12 lg:py-12"
+          className="relative flex flex-col justify-between overflow-hidden px-6 pt-8 pb-6 sm:px-10 lg:px-12 lg:py-12"
         >
           <div>
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
               <Link
-                href={hasExistingProjects ? "/dashboard" : "/"}
+                href={hasExistingProjects ? "/projects" : "/create"}
                 className="inline-flex transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                onClick={(e) => {
+                  // New users stay in onboarding — logo is branding, not a skip.
+                  if (!hasExistingProjects) e.preventDefault();
+                }}
               >
                 <GitworkLogo size={56} withWordmark className="gap-3.5 sm:gap-4" />
               </Link>
-              {hasExistingProjects ? (
-                <button
-                  type="button"
-                  onClick={() => router.push("/dashboard")}
-                  className="text-sm font-medium text-[#696969] underline-offset-4 hover:text-[#141413] hover:underline"
-                >
-                  Dashboard
-                </button>
-              ) : null}
             </div>
 
             <div className="mt-12 lg:mt-16">
               <p className="text-[11px] font-bold tracking-[0.18em] text-[#696969] uppercase">
                 New project
               </p>
-              <h1 className="mt-3 max-w-[12ch] font-display text-5xl leading-[1.02] tracking-[-0.045em] text-[#141413] sm:text-6xl lg:text-[4rem]">
+              <h1 className="mt-3 max-w-[11rem] font-display text-5xl leading-[1.05] tracking-[-0.045em] text-[#141413] sm:max-w-[13rem] sm:text-6xl lg:text-[4rem]">
                 {stepMeta.title}
               </h1>
               <p className="mt-4 max-w-[22rem] text-[15px] leading-7 text-[#696969] sm:text-base">
@@ -535,7 +510,8 @@ export function CreateProjectOnboarding() {
           </div>
 
           <p className="mt-10 hidden max-w-xs text-xs leading-5 text-[#696969] lg:block">
-            Gitwork indexes your branch, syncs commits, and builds shared context for Q&amp;A and meetings.
+            Gitwork indexes your branch, syncs commits, and builds shared
+            context for Q&amp;A and meetings.
           </p>
         </aside>
 
@@ -545,9 +521,9 @@ export function CreateProjectOnboarding() {
         >
           <form
             onSubmit={handleSubmit(onSubmit)}
-            className="flex min-h-[420px] flex-col justify-between"
+            className="flex w-full max-w-lg flex-col"
           >
-            <div data-onboard-panel className="max-w-lg">
+            <div data-onboard-panel className="w-full min-w-0">
               {step === 1 ? (
                 <div className="space-y-8">
                   <ul className="space-y-6">
@@ -591,100 +567,53 @@ export function CreateProjectOnboarding() {
                       </div>
                     </li>
                   </ul>
-                  <p className="border-l-2 border-[#cf4500]/50 pl-4 text-sm leading-6 text-[#696969]">
-                    Authorize GitHub once to browse and index repos. For creating
-                    issues, PR review comments, and draft releases, add a Personal
-                    Access Token later in Settings with write permissions.
-                  </p>
+                  {githubStatusLoading ? (
+                    <p className="flex items-center gap-2 border-l-2 border-[#d1cdc7] pl-4 text-sm leading-6 text-[#696969]">
+                      <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                      Checking GitHub access…
+                    </p>
+                  ) : githubReady ? (
+                    <p className="border-l-2 border-[#3860be]/50 pl-4 text-sm leading-6 text-[#696969]">
+                      GitHub access is ready
+                      {githubStatus.data?.username
+                        ? ` (@${githubStatus.data.username})`
+                        : ""}
+                      . Continue to add your repository.
+                    </p>
+                  ) : (
+                    <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
+                      <p className="font-medium text-[#141413]">
+                        Connect GitHub to continue
+                      </p>
+                      <p>
+                        Gitwork needs GitHub API access to list branches, index
+                        code, and sync commits. Connect your account or add a
+                        Personal Access Token in Settings.
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="default"
+                          className="h-10 rounded-xl"
+                          asChild
+                        >
+                          <a href={githubConnectHref()}>Connect GitHub</a>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 rounded-xl border-[#d1cdc7]"
+                          asChild
+                        >
+                          <Link href="/settings">Add token in Settings</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : null}
 
               {step === 2 ? (
-                <div className="space-y-6">
-                  {githubReady ? (
-                    <div className="rounded-xl border border-[#d1cdc7]/80 bg-[#fcfbfa] p-5">
-                      <div className="flex items-start gap-3">
-                        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[#2f6b3a]" />
-                        <div>
-                          <p className="font-medium text-[#141413]">
-                            {githubStatus.data?.usingServerFallback
-                              ? "Using server GitHub access"
-                              : githubStatus.data?.usingSettingsPat
-                                ? "Using GitHub token from Settings"
-                                : `GitHub connected${
-                                    githubStatus.data?.username
-                                      ? ` as @${githubStatus.data.username}`
-                                      : ""
-                                  }`}
-                          </p>
-                          <p className="mt-1 text-sm leading-6 text-[#696969]">
-                            {githubStatus.data?.usingServerFallback
-                              ? "GITHUB_TOKEN is set on the server. You can still authorize your own GitHub account or add a PAT in Settings."
-                              : githubStatus.data?.usingSettingsPat
-                                ? "Your Settings PAT is preferred for GitHub reads and writes. Keep Pull requests, Issues, and Contents on Read and write."
-                                : "OAuth is connected for repo access. Add a PAT in Settings if you need to create issues, post PR reviews, or draft releases."}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <ul className="space-y-2.5 text-sm leading-6 text-[#696969]">
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          Read repositories you can access for indexing and Q&amp;A.
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          Load branches, commits, and open pull requests.
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-[#cf4500]" />
-                          Register webhooks so new pushes stay in sync.
-                        </li>
-                      </ul>
-                      <Button
-                        type="button"
-                        className="h-12 w-full rounded-xl"
-                        onClick={() => void connectGithub()}
-                        disabled={!userLoaded || connecting}
-                      >
-                        {connecting ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Connecting…
-                          </>
-                        ) : (
-                          <>
-                            <Github className="size-4" />
-                            Authorize with GitHub
-                          </>
-                        )}
-                      </Button>
-                      <p className="text-xs leading-5 text-[#696969]">
-                        Uses Clerk GitHub OAuth with the{" "}
-                        <code className="text-[#141413]">repo</code> scope. Enable
-                        GitHub SSO + custom credentials in the Clerk dashboard.
-                      </p>
-                    </div>
-                  )}
-
-                  <GithubTokenGuide variant="compact" showSettingsLink />
-
-                  {githubReady ? (
-                    <button
-                      type="button"
-                      onClick={() => void connectGithub()}
-                      className="text-sm font-medium text-[#3860be] underline-offset-4 hover:underline"
-                      disabled={connecting}
-                    >
-                      Re-authorize for more scopes
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {step === 3 ? (
                 <div className="space-y-6">
                   <div className="space-y-2">
                     <label
@@ -729,11 +658,31 @@ export function CreateProjectOnboarding() {
                         <Loader2 className="size-3.5 animate-spin text-[#696969]" />
                       ) : null}
                     </div>
+                    {!githubReady ? (
+                      <div className="rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
+                        GitHub is not connected.{" "}
+                        <a
+                          href={githubConnectHref()}
+                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                        >
+                          Connect GitHub
+                        </a>{" "}
+                        or add a token in{" "}
+                        <Link
+                          href="/settings"
+                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                        >
+                          Settings
+                        </Link>{" "}
+                        before you can continue.
+                      </div>
+                    ) : null}
                     <Input
                       value={repoFilter}
                       onChange={(event) => setRepoFilter(event.target.value)}
                       placeholder="Filter repos…"
                       className="h-10 rounded-xl border-[#d1cdc7] bg-[#fcfbfa] text-[#141413] placeholder:text-[#696969]"
+                      disabled={!githubReady}
                     />
                     <div className="max-h-48 overflow-y-auto rounded-xl border border-[#d1cdc7]/80 bg-[#fcfbfa]">
                       {reposQuery.error ? (
@@ -773,9 +722,11 @@ export function CreateProjectOnboarding() {
                         </ul>
                       ) : (
                         <p className="p-3 text-xs text-[#696969]">
-                          {reposQuery.isLoading
-                            ? "Loading repositories…"
-                            : "No repositories found. Paste a URL above instead."}
+                          {!githubReady
+                            ? "Add GitHub access in Settings to browse repositories."
+                            : reposQuery.isLoading
+                              ? "Loading repositories…"
+                              : "No repositories found. Paste a URL above instead."}
                         </p>
                       )}
                     </div>
@@ -783,7 +734,7 @@ export function CreateProjectOnboarding() {
                 </div>
               ) : null}
 
-              {step === 4 ? (
+              {step === 3 ? (
                 <div className="space-y-6">
                   <dl className="space-y-4 border-y border-[#d1cdc7]/80 py-5 text-sm">
                     <div className="flex items-start justify-between gap-4">
@@ -801,11 +752,13 @@ export function CreateProjectOnboarding() {
                     <div className="flex items-start justify-between gap-4">
                       <dt className="text-[#696969]">GitHub</dt>
                       <dd className="font-medium text-[#141413]">
-                        {githubReady
+                        {hasUserGithub
                           ? githubStatus.data?.username
                             ? `@${githubStatus.data.username}`
                             : "Connected"
-                          : "Not connected"}
+                          : githubStatus.data?.usingServerFallback
+                            ? "Server token"
+                            : "Not connected"}
                       </dd>
                     </div>
                   </dl>
@@ -848,27 +801,28 @@ export function CreateProjectOnboarding() {
               ) : null}
             </div>
 
-            <div className="mt-10 flex max-w-lg flex-wrap items-center justify-between gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-11 px-3 text-[#696969] hover:bg-transparent hover:text-[#141413]"
-                onClick={goBack}
-                disabled={createProject.isPending}
-              >
-                <ChevronLeft className="size-4" />
-                {step === 1 ? "Exit" : "Back"}
-              </Button>
+            <div className="mt-10 flex w-full min-w-0 items-center justify-between gap-3 border-t border-[#d1cdc7]/70 pt-6">
+              {step === 1 && !hasExistingProjects ? (
+                <span className="h-11" aria-hidden />
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 shrink-0 px-3 text-[#696969] hover:bg-transparent hover:text-[#141413]"
+                  onClick={goBack}
+                  disabled={createProject.isPending}
+                >
+                  <ChevronLeft className="size-4" />
+                  {step === 1 ? "Back to projects" : "Back"}
+                </Button>
+              )}
 
               {step < ONBOARDING_STEPS.length ? (
                 <Button
                   type="button"
-                  className="h-11 min-w-[9.5rem] rounded-xl"
+                  className="h-11 min-w-[9.5rem] shrink-0 rounded-xl"
                   onClick={goNext}
-                  disabled={
-                    createProject.isPending ||
-                    (step === 2 && !githubReady)
-                  }
+                  disabled={createProject.isPending || !canContinue}
                 >
                   Continue
                   <ChevronRight className="size-4" />
@@ -876,7 +830,7 @@ export function CreateProjectOnboarding() {
               ) : (
                 <Button
                   type="submit"
-                  className="h-11 min-w-[9.5rem] rounded-xl"
+                  className="h-11 min-w-[9.5rem] shrink-0 rounded-xl"
                   disabled={
                     createProject.isPending ||
                     !projectName?.trim() ||

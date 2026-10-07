@@ -93,10 +93,7 @@ function isFeaturePath(relPosix) {
   }
 
   // Domain libs (not tiny utils)
-  if (
-    /^src\/lib\/(?!utils\.ts$)[^/]+\.ts$/.test(p) &&
-    !p.endsWith("clerk-appearance.ts")
-  ) {
+  if (/^src\/lib\/(?!utils\.ts$)[^/]+\.ts$/.test(p)) {
     return true;
   }
 

@@ -1,27 +1,19 @@
 "use client";
 
 import useProjects from "@/hooks/use-projects";
-import { ExternalLink, Github, MessageSquareText, Trash2 } from "lucide-react";
+import { ExternalLink, Github, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import React from "react";
 import CommitLog from "./commit-log";
 import AskQuestionCard from "./ask-question";
 import IndexingPanel from "./indexing-panel";
 import MeetingCard from "./meeting-card";
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { api } from "@/trpc/react";
-import { toast } from "sonner";
 
 const Dashboard = () => {
-  const { project, projects, projectId, setProjectId } = useProjects();
-  const utils = api.useUtils();
-  const deleteProject = api.project.deleteProject.useMutation();
+  const { project, projectId } = useProjects();
   const indexingStatus = api.project.getIndexingStatus.useQuery(
-    { projectId: projectId ?? "" },
-    { enabled: Boolean(projectId) },
-  );
-  const { data: membership } = api.project.getMyMembership.useQuery(
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
   );
@@ -29,58 +21,13 @@ const Dashboard = () => {
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
   );
-  const isOwner = membership?.role === "OWNER";
   const recentQuestions = questions?.slice(0, 4) ?? [];
-
-  const handleDelete = () => {
-    if (!project) return;
-    if (
-      !confirm(
-        `Delete project "${project.name}"? Its meetings will no longer appear in the list. This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-
-    deleteProject.mutate(
-      { projectId: project.id },
-      {
-        onSuccess: () => {
-          toast.success("Project deleted successfully");
-          const remaining =
-            projects?.filter((p) => p.id !== project.id) ?? [];
-          utils.project.getProjects.setData(undefined, remaining);
-          setProjectId(remaining[0]?.id ?? "");
-          void utils.project.getProjects.invalidate();
-          void utils.project.getMeetings.invalidate();
-          void utils.project.getCommits.invalidate();
-        },
-        onError: (err) => {
-          toast.error(err.message || "Failed to delete project");
-        },
-      },
-    );
-  };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={project?.name ?? "Dashboard"}
         description="Ask the codebase, upload meetings, and scan AI commit summaries."
-        actions={
-          project && isOwner ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={deleteProject.isPending}
-              onClick={handleDelete}
-              className="border-[#d1cdc7] text-[#cf4500] hover:bg-[#cf4500]/10 hover:text-[#cf4500]"
-            >
-              <Trash2 className="size-4" />
-              Delete
-            </Button>
-          ) : null
-        }
       />
 
       {project?.githubUrl ? (

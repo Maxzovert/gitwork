@@ -1,16 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  KeyRound,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
+import { DeleteProjectDialog } from "@/components/delete-project-dialog";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeSelect } from "@/components/ui/theme-select";
 import { GithubTokenGuide } from "@/components/github-token-guide";
+import useProjects from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
 
 type NotificationKey =
@@ -99,11 +109,17 @@ function Toggle({
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const utils = api.useUtils();
+  const { project, projects, projectId, setProjectId } = useProjects();
   const { data: settings, isLoading: settingsLoading } =
     api.settings.getSettings.useQuery();
   const { data: tokens, isLoading: tokensLoading } =
     api.settings.listTokens.useQuery();
+  const { data: membership } = api.project.getMyMembership.useQuery(
+    { projectId: projectId ?? "" },
+    { enabled: Boolean(projectId) },
+  );
 
   const [draft, setDraft] = useState({
     emailNotifications: true,
@@ -115,6 +131,9 @@ export default function SettingsPage() {
   const [tokenName, setTokenName] = useState("");
   const [tokenProvider, setTokenProvider] = useState("GITHUB");
   const [tokenValue, setTokenValue] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const isOwner = membership?.role === "OWNER";
 
   useEffect(() => {
     if (settings) setDraft(settings);
@@ -147,6 +166,24 @@ export default function SettingsPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const deleteProject = api.project.deleteProject.useMutation({
+    onSuccess: () => {
+      if (!project) return;
+      toast.success("Project deleted");
+      setDeleteOpen(false);
+      const remaining = projects?.filter((p) => p.id !== project.id) ?? [];
+      utils.project.getProjects.setData(undefined, remaining);
+      setProjectId(remaining[0]?.id ?? "");
+      void utils.project.getProjects.invalidate();
+      void utils.project.getMeetings.invalidate();
+      void utils.project.getCommits.invalidate();
+      if (!remaining.length) {
+        router.replace("/create");
+      }
+    },
+    onError: (error) => toast.error(error.message || "Failed to delete project"),
+  });
+
   const settingsDirty =
     settings &&
     (draft.emailNotifications !== settings.emailNotifications ||
@@ -159,7 +196,7 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Settings"
-        description="Manage notifications and encrypted API tokens for your account."
+        description="Manage notifications, encrypted API tokens, and the active project."
       />
 
       <section className="space-y-4">
@@ -234,7 +271,7 @@ export default function SettingsPage() {
         <p className="text-sm text-[#696969]">
           Tokens are encrypted with AES-256-GCM before storage. Only the last
           four characters are shown after save. A GitHub token saved here is
-          preferred for API calls (over Clerk OAuth and server{" "}
+          preferred for API calls (over Auth0 GitHub OAuth and server{" "}
           <code className="text-[#141413]">GITHUB_TOKEN</code>).
         </p>
 
@@ -382,6 +419,67 @@ export default function SettingsPage() {
           )}
         </div>
       </section>
+
+      {project ? (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-[#cf4500]" />
+            <h2 className="text-base font-semibold tracking-[-0.02em] text-[#141413]">
+              Danger zone
+            </h2>
+          </div>
+          <p className="text-sm text-[#696969]">
+            Irreversible actions for{" "}
+            <span className="font-medium text-[#141413]">{project.name}</span>.
+            Switch projects from the Projects page to manage a different workspace.
+          </p>
+
+          <div className="rounded-2xl border border-[#cf4500]/35 bg-[#cf4500]/5 p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[#141413]">
+                  Delete this project
+                </p>
+                <p className="mt-0.5 text-sm text-[#696969]">
+                  Soft-deletes the project and hides its meetings, commits, and
+                  Q&amp;A from your workspace. Only owners can delete.
+                </p>
+              </div>
+              {isOwner ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={deleteProject.isPending}
+                  onClick={() => setDeleteOpen(true)}
+                  className="shrink-0 border-[#cf4500] text-[#cf4500] hover:bg-[#cf4500]/10 hover:text-[#cf4500]"
+                >
+                  <Trash2 className="size-4" />
+                  Delete project
+                </Button>
+              ) : (
+                <p className="shrink-0 text-sm text-[#696969]">
+                  Ask an owner to delete this project.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DeleteProjectDialog
+            open={deleteOpen}
+            projectName={project.name}
+            isPending={deleteProject.isPending}
+            onOpenChange={(nextOpen) => {
+              if (!deleteProject.isPending) {
+                setDeleteOpen(nextOpen);
+              }
+            }}
+            onConfirm={() => {
+              deleteProject.mutate({ projectId: project.id });
+            }}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

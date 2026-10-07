@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@auth0/nextjs-auth0";
 import {
   ChevronDown,
   ChevronRight,
@@ -430,9 +429,9 @@ const AskQuestionCard = ({ className }: AskQuestionCardProps) => {
             className="relative z-20 mx-auto mt-6 flex w-full max-w-xl flex-col gap-4 overflow-visible"
           >
             <div className="flex items-center gap-3">
-              {user?.imageUrl ? (
+              {user?.picture ? (
                 <Image
-                  src={user.imageUrl}
+                  src={user.picture}
                   alt=""
                   width={40}
                   height={40}

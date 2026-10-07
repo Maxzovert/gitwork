@@ -23,7 +23,7 @@
   "dependencies": {
     "@ai-sdk/google": "^4.0.24",
     "@ai-sdk/rsc": "^3.0.37",
-    "@clerk/nextjs": "^6.18.5",
+    "@auth0/nextjs-auth0": "^4.30.0",
     "@google/genai": "^0.13.0",
     "@google/generative-ai": "^0.24.1",
     "@gsap/react": "^2.1.2",

@@ -145,7 +145,7 @@ export const projectRouter = createTRPCRouter({
     }),
 
   getProjects: protectedProcedure.query(async ({ ctx }) => {
-    return await ctx.db.project.findMany({
+    const rows = await ctx.db.project.findMany({
       where: {
         userToProjects: {
           some: {
@@ -158,7 +158,19 @@ export const projectRouter = createTRPCRouter({
         overview: true,
         webhookSecret: true,
       },
+      include: {
+        userToProjects: {
+          where: { userId: ctx.user.userId! },
+          select: { role: true },
+          take: 1,
+        },
+      },
     });
+
+    return rows.map(({ userToProjects, ...project }) => ({
+      ...project,
+      role: userToProjects[0]?.role ?? ("MEMBER" as const),
+    }));
   }),
 
   getBranches: protectedProcedure

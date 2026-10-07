@@ -1,7 +1,7 @@
-import { clerkClient } from "@clerk/nextjs/server";
 import { Octokit } from "octokit";
 import { TRPCError } from "@trpc/server";
 
+import { auth0, getSessionUser } from "@/lib/auth0";
 import { db } from "@/server/db";
 import { GITHUB_REPO_SCOPES } from "@/lib/github-scopes";
 import { getStoredGithubPat } from "@/server/api/routers/settings";
@@ -21,43 +21,46 @@ export function createGithubClient(githubToken?: string | null) {
   return new Octokit({ auth: token });
 }
 
-/**
- * Fetch the Clerk-managed GitHub OAuth access token for a user.
- * Requires GitHub SSO in Clerk with the `repo` scope (custom OAuth app).
- */
-export async function getUserGithubToken(clerkUserId: string) {
-  const client = await clerkClient();
-
+async function probeGithubUsername(token: string): Promise<string | null> {
   try {
-    const response = await client.users.getUserOauthAccessToken(
-      clerkUserId,
-      "oauth_github",
-    );
-    const entry = response.data[0];
-    if (entry?.token) {
-      return entry.token;
-    }
-  } catch {
-    // Fall through — older Clerk versions may use "github"
-  }
-
-  try {
-    const response = await client.users.getUserOauthAccessToken(
-      clerkUserId,
-      "github",
-    );
-    return response.data[0]?.token ?? null;
+    const client = createGithubClient(token);
+    const { data } = await client.rest.users.getAuthenticated();
+    return data.login;
   } catch {
     return null;
   }
 }
 
-export async function requireUserGithubToken(clerkUserId: string) {
-  // Prefer an explicit Settings PAT over Clerk OAuth / env fallback.
-  const stored = await getStoredGithubPat(db, clerkUserId);
+/**
+ * Auth0 GitHub connection token for the **current** session user only.
+ * Other users' tokens require Settings PAT (or Management API — not wired yet).
+ */
+export async function getUserGithubToken(userId: string) {
+  const session = await getSessionUser();
+  if (!session?.userId || session.userId !== userId) {
+    return null;
+  }
+
+  try {
+    const result = await auth0.getAccessTokenForConnection({
+      connection: "github",
+    });
+    return result.token ?? null;
+  } catch (error) {
+    console.warn(
+      "[github-auth] getAccessTokenForConnection(github) failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+export async function requireUserGithubToken(userId: string) {
+  // Prefer an explicit Settings PAT over Auth0 GitHub / env fallback.
+  const stored = await getStoredGithubPat(db, userId);
   if (stored) return stored;
 
-  const token = await getUserGithubToken(clerkUserId);
+  const token = await getUserGithubToken(userId);
   if (token) return token;
 
   if (process.env.GITHUB_TOKEN) {
@@ -71,7 +74,10 @@ export async function requireUserGithubToken(clerkUserId: string) {
   });
 }
 
-/** Prefer an override, then Settings PAT, then OAuth, then env fallback. */
+/**
+ * Prefer override → owner Settings PAT → current-user Auth0 GitHub token when
+ * the caller is the owner → env fallback.
+ */
 export async function resolveProjectGithubToken(
   projectId: string,
   overrideToken?: string | null,
@@ -124,31 +130,38 @@ export async function listUserGithubRepos(
   }));
 }
 
-export async function getGithubConnectionStatus(clerkUserId: string) {
-  const client = await clerkClient();
-  const user = await client.users.getUser(clerkUserId);
-  const account = user.externalAccounts.find(
-    (item) => item.provider === "github",
-  );
-
-  const storedPat = await getStoredGithubPat(db, clerkUserId);
-  const oauthToken = storedPat ? null : await getUserGithubToken(clerkUserId);
+export async function getGithubConnectionStatus(userId: string) {
+  const storedPat = await getStoredGithubPat(db, userId);
+  const oauthToken = storedPat ? null : await getUserGithubToken(userId);
   const effectiveToken = storedPat ?? oauthToken;
-  const envFallback = Boolean(process.env.GITHUB_TOKEN?.trim());
-  const approvedScopes = account?.approvedScopes?.split(" ").filter(Boolean) ?? [];
-  const hasRepoScope =
-    approvedScopes.includes("repo") ||
-    approvedScopes.includes("public_repo") ||
-    Boolean(storedPat) ||
-    envFallback;
+
+  let username: string | null = null;
+  let userTokenValid = false;
+
+  if (effectiveToken) {
+    username = await probeGithubUsername(effectiveToken);
+    // Only treat as connected when GitHub accepts the token.
+    userTokenValid = Boolean(username);
+  }
+
+  let usingServerFallback = false;
+  if (!userTokenValid && process.env.GITHUB_TOKEN?.trim()) {
+    const envUser = await probeGithubUsername(process.env.GITHUB_TOKEN);
+    if (envUser) {
+      usingServerFallback = true;
+      username = envUser;
+    }
+  }
 
   return {
-    connected: Boolean(account) || Boolean(storedPat) || envFallback,
-    username: account?.username ?? null,
-    hasToken: Boolean(effectiveToken) || envFallback,
-    hasRepoScope: hasRepoScope || Boolean(effectiveToken) || envFallback,
-    approvedScopes,
-    usingServerFallback: envFallback && !effectiveToken,
-    usingSettingsPat: Boolean(storedPat),
+    // User-linked credentials only (not the shared server GITHUB_TOKEN).
+    connected: userTokenValid,
+    username,
+    hasToken: userTokenValid || usingServerFallback,
+    hasRepoScope: userTokenValid || usingServerFallback,
+    approvedScopes:
+      userTokenValid || usingServerFallback ? [...GITHUB_REPO_SCOPES] : [],
+    usingServerFallback,
+    usingSettingsPat: Boolean(storedPat) && userTokenValid,
   };
 }

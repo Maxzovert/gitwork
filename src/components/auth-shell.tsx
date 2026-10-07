@@ -20,32 +20,39 @@ export function AuthShell({
 
   useGSAP(
     () => {
+      const brand = root.current?.querySelector<HTMLElement>("[data-auth-brand]");
+      const sub = root.current?.querySelector<HTMLElement>("[data-auth-sub]");
+      const form = root.current?.querySelector<HTMLElement>("[data-auth-form]");
+      if (!brand || !sub || !form) return;
+
       const reduce = window.matchMedia(
         "(prefers-reduced-motion: reduce)",
       ).matches;
-      if (reduce) return;
 
-      gsap.set("[data-auth-brand]", { opacity: 0, y: 28, scale: 0.92 });
-      gsap.set("[data-auth-sub]", { opacity: 0, y: 18 });
-      gsap.set("[data-auth-form]", { opacity: 0, y: 32 });
+      // Always end visible — never leave the form stuck at opacity 0.
+      if (reduce) {
+        gsap.set([brand, sub, form], { clearProps: "all", opacity: 1, y: 0, scale: 1 });
+        return;
+      }
 
       gsap
         .timeline({ defaults: { ease: "power3.out" } })
-        .to("[data-auth-brand]", {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.9,
-        })
-        .to(
-          "[data-auth-sub]",
-          { opacity: 1, y: 0, duration: 0.7 },
-          "-=0.5",
+        .fromTo(
+          brand,
+          { opacity: 0, y: 20, scale: 0.96 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.7 },
         )
-        .to(
-          "[data-auth-form]",
-          { opacity: 1, y: 0, duration: 0.8 },
+        .fromTo(
+          sub,
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.55 },
           "-=0.4",
+        )
+        .fromTo(
+          form,
+          { opacity: 0, y: 16 },
+          { opacity: 1, y: 0, duration: 0.65 },
+          "-=0.35",
         );
     },
     { scope: root },
@@ -56,7 +63,11 @@ export function AuthShell({
       ref={root}
       className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#f3f0ee] px-4 py-12"
     >
-      <div className="relative z-10 mb-12 flex flex-col items-center gap-5 sm:mb-14 sm:gap-6">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(207,69,0,0.08),_transparent_55%),radial-gradient(ellipse_at_bottom,_rgba(20,20,19,0.04),_transparent_50%)]"
+      />
+      <div className="relative z-10 mb-10 flex flex-col items-center gap-5 sm:mb-12 sm:gap-6">
         <Link
           href="/"
           data-auth-brand

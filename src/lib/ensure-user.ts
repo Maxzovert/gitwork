@@ -1,13 +1,31 @@
 import { db } from "@/server/db";
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { getSessionUser, type SessionUser } from "@/lib/auth0";
 import * as Sentry from "@sentry/nextjs";
 import { Prisma } from "@prisma/client";
 
+function splitName(user: SessionUser) {
+  const given = user.given_name?.trim() || null;
+  const family = user.family_name?.trim() || null;
+  if (given || family) {
+    return { firstName: given, lastName: family };
+  }
+  const parts = (user.name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: null, lastName: null };
+  }
+  return {
+    firstName: parts[0] ?? null,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
+
 export async function ensureDbUser(options?: { refreshProfile?: boolean }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
     throw new Error("User not authenticated");
   }
+
+  const { userId } = sessionUser;
 
   try {
     const existing = await db.user.findUnique({
@@ -19,32 +37,31 @@ export async function ensureDbUser(options?: { refreshProfile?: boolean }) {
       return userId;
     }
 
-    const client = await clerkClient();
-    const user = await client.users.getUser(userId);
-    const email = user.emailAddresses[0]?.emailAddress;
+    const email = sessionUser.email?.trim();
     if (!email) {
       throw new Error("User has no email address");
     }
+
+    const { firstName, lastName } = splitName(sessionUser);
 
     try {
       await db.user.upsert({
         where: { id: userId },
         update: {
           emailAdress: email,
-          imageUrl: user.imageUrl,
-          firstName: user.firstName,
-          lastName: user.lastName,
+          imageUrl: sessionUser.picture,
+          firstName,
+          lastName,
         },
         create: {
           id: userId,
           emailAdress: email,
-          imageUrl: user.imageUrl,
-          firstName: user.firstName,
-          lastName: user.lastName,
+          imageUrl: sessionUser.picture,
+          firstName,
+          lastName,
         },
       });
     } catch (error) {
-      // Same email, different Clerk user id (e.g. switched Clerk instance).
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002"
@@ -55,10 +72,10 @@ export async function ensureDbUser(options?: { refreshProfile?: boolean }) {
         });
         if (byEmail && byEmail.id !== userId) {
           Sentry.captureMessage(
-            "ensureDbUser: email already linked to another Clerk user id",
+            "ensureDbUser: email already linked to another Auth0 user id",
             {
               level: "error",
-              extra: { clerkUserId: userId, existingUserId: byEmail.id },
+              extra: { auth0UserId: userId, existingUserId: byEmail.id },
             },
           );
           throw new Error(

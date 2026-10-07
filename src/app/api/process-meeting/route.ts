@@ -1,6 +1,6 @@
 import { processMeeting } from "@/lib/assembly";
+import { getSessionUser } from "@/lib/auth0";
 import { db } from "@/server/db";
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -12,7 +12,8 @@ const bodyParser = z.object({
 
 export const maxDuration = 300; //5 mins
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const sessionUser = await getSessionUser();
+  const userId = sessionUser?.userId;
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

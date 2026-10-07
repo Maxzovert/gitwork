@@ -44,7 +44,7 @@ export function GithubTokenGuide({
             <p className="mt-1 text-sm leading-6 text-[#696969]">
               {compact
                 ? "OAuth is enough to read repos. For creating issues, posting PR reviews, and draft releases, add a Personal Access Token in Settings with write access."
-                : "A GitHub Personal Access Token (PAT) in Settings is preferred over Clerk OAuth and the server env token. Use it for write actions: meeting → issues, PR digest comments, and draft releases."}
+                : "A GitHub Personal Access Token (PAT) in Settings is preferred over Auth0 GitHub OAuth and the server env token. Use it for write actions: meeting → issues, PR digest comments, and draft releases."}
             </p>
           </div>
 

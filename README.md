@@ -15,15 +15,15 @@ AI workspace for GitHub teams. Connect a repository once, then ask branch-aware 
 | **Release drafting** | Compares Git tags or an active branch, generates editable changelog notes, and creates draft GitHub Releases |
 | **Team workspace** | Invite links, owner/member roles, shared project context |
 | **Account settings** | Notification preferences plus AES-256-GCM encrypted API-token storage with a GitHub PAT fallback |
-| **GitHub access** | Authorize once via Clerk OAuth, or optionally store a personal access token encrypted as a fallback |
+| **GitHub access** | Authorize once via Auth0 GitHub connection, or optionally store a personal access token encrypted as a fallback |
 
-Sign in can use **Google** (or other Clerk providers). Creating and indexing repos still requires a one-time **Connect GitHub** step so Gitwork can read repositories. If Clerk OAuth is unavailable, users can optionally store an encrypted GitHub PAT in Settings.
+Sign in uses **Auth0 Universal Login** (Google and other connections you enable in Auth0). Creating and indexing repos still requires a one-time **Connect GitHub** step so Gitwork can read repositories. If Auth0 GitHub OAuth is unavailable, users can optionally store an encrypted GitHub PAT in Settings.
 
 ## Stack
 
 - **Frontend:** Next.js 15 (App Router), React 19, Tailwind CSS 4, GSAP
 - **API:** tRPC + TanStack Query
-- **Auth:** Clerk (Google sign-in + GitHub OAuth for repo access)
+- **Auth:** Auth0 (Universal Login + GitHub connection for repo access)
 - **Database:** PostgreSQL + Prisma + `pgvector` embeddings
 - **AI:** Google Gemini (summaries, Q&A, digests)
 - **Meetings:** Cloudinary (upload) + AssemblyAI (transcription)
@@ -34,8 +34,9 @@ Sign in can use **Google** (or other Clerk providers). Creating and indexing rep
 | Path | Purpose |
 |------|---------|
 | `/` | Landing page |
-| `/sign-in`, `/sign-up` | Clerk auth |
-| `/sync-user` | Sync Clerk user into the database |
+| `/sign-in`, `/sign-up` | Redirect into Auth0 Universal Login |
+| `/auth/*` | Auth0 SDK routes (login, callback, logout, profile) |
+| `/sync-user` | Sync Auth0 user into the database |
 | `/create` | Guided project onboarding (Connect GitHub → pick repo → index) |
 | `/dashboard` | Project home + commit log |
 | `/overview` | Generated beginner briefing and repository map |
@@ -54,7 +55,7 @@ Sign in can use **Google** (or other Clerk providers). Creating and indexing rep
 - Node.js 20+
 - npm
 - PostgreSQL with the `vector` extension (local Docker via `start-database.sh`, or Neon / similar)
-- Clerk application
+- Auth0 Regular Web Application (+ GitHub social connection with `repo` scope)
 - Gemini API key
 - AssemblyAI API key
 - Cloudinary account (for meeting audio uploads)
@@ -78,11 +79,12 @@ cp .env.example .env
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string (with `vector` support) |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Yes | Clerk secret key |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Usually `/sign-in` |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Usually `/sign-up` |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL` | Recommended | `/sync-user` |
+| `DIRECT_URL` | Yes (Prisma) | Direct DB URL for migrate/push (same as `DATABASE_URL` locally) |
+| `AUTH0_DOMAIN` | Yes | Auth0 tenant domain |
+| `AUTH0_CLIENT_ID` | Yes | Auth0 application client ID |
+| `AUTH0_CLIENT_SECRET` | Yes | Auth0 application client secret |
+| `AUTH0_SECRET` | Yes | Random secret for session encryption (`openssl rand -hex 32`) |
+| `APP_BASE_URL` | Yes (local/prod) | App origin for Auth0 callbacks (e.g. `http://localhost:3000`) |
 | `GEMINI_API_KEY` | Yes | Code Q&A, commit summaries, PR digests |
 | `ASSEMBLY_API_KEY` | Yes | Meeting transcription |
 | `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | Yes (meetings) | Audio uploads |
@@ -93,7 +95,7 @@ cp .env.example .env
 | `TOKEN_ENCRYPTION_KEY` | Required for stored tokens | 32-byte key or 64-character hex key used for AES-256-GCM encryption |
 | `SKIP_ENV_VALIDATION` | Optional | Set to skip `@t3-oss/env` validation (Docker/CI) |
 
-AI keys stay on the server (not per-user). GitHub access prefers **Clerk OAuth**, not a shared PAT.
+AI keys stay on the server (not per-user). GitHub access prefers **Auth0 GitHub connection**, not a shared PAT.
 
 ### 3. Database
 
@@ -132,32 +134,33 @@ App: [http://localhost:3000](http://localhost:3000)
 
 ## GitHub OAuth setup (required for create / index / commits / digests)
 
-Users authorize GitHub **once** via Clerk. Tokens are **not** stored in your database.
+Users authorize GitHub **once** via Auth0’s GitHub connection. Tokens are **not** stored in your database (except optional encrypted PATs in Settings).
 
-### Enable GitHub in Clerk
+### Enable GitHub in Auth0
 
-1. Open [Clerk Dashboard → SSO connections](https://dashboard.clerk.com/~/user-authentication/sso-connections).
-2. Add **GitHub** for all users.
-3. Enable **Use custom credentials** (shared Clerk credentials do **not** include the `repo` scope).
-4. Create a [GitHub OAuth App](https://github.com/settings/applications/new):
-   - **Homepage URL:** your app URL
-   - **Authorization callback URL:** copy from the Clerk GitHub connection page
-5. Paste **Client ID** and **Client Secret** into Clerk.
-6. In Clerk’s GitHub scopes field, add: `repo`  
-   (private repos, contents, commits, PRs, webhook registration)
+1. Open [Auth0 Dashboard → Authentication → Social](https://manage.auth0.com/#/connections/social).
+2. Enable **GitHub** and turn it on for your Application.
+3. Create a [GitHub OAuth App](https://github.com/settings/applications/new):
+   - **Homepage URL:** your app URL (e.g. `http://localhost:3000`)
+   - **Authorization callback URL (critical):** `https://YOUR_AUTH0_DOMAIN/login/callback`  
+     Example: `https://dev-xxxxx.us.auth0.com/login/callback`  
+     Do **not** use `http://localhost:3000/auth/callback` here — that causes a 404 / broken redirect after GitHub.
+4. Paste **Client ID** and **Client Secret** into Auth0’s GitHub connection.
+5. In Auth0 GitHub permissions/scopes, include: `repo` (for private repos / webhooks).
+6. In your Auth0 **Application** settings, Allowed Callback URLs must include:  
+   `http://localhost:3000/auth/callback` (and your production URL’s `/auth/callback`).
 
-Also enable **Google** (or other providers) if you want non-GitHub login. Users who sign in with Google still click **Authorize with GitHub** on `/create` to link repo access.
+Also enable **Google** (or other connections) if you want non-GitHub login. Users who sign in with Google still click **Connect GitHub** on `/create` to authorize repo access (`/auth/login?connection=github`).
 
 ### User connect / link flow
 
 | User state | What happens |
 |------------|----------------|
-| New user on `/create` | **Connect GitHub** → **Authorize with GitHub** (`createExternalAccount` + `repo`) |
-| Signed in with Google / email only | Same button links GitHub to the existing Clerk user |
-| Connected but missing `repo` | **Re-authorize for more scopes** (`externalAccount.reauthorize`) |
-| Already connected | Shows connected status; user picks a repo and continues |
+| New user on `/create` | **Connect GitHub** → Auth0 login with `connection=github` |
+| Signed in with Google / email only | Same button starts Auth0 GitHub connection |
+| Already connected | Status shows connected; user picks a repo and continues |
 
-Server-side, Gitwork loads the token with Clerk `getUserOauthAccessToken` and uses it for indexing, commits, PR digests, releases, issues, and webhooks. The token is never returned to the client. An encrypted per-user GitHub PAT from `/settings` is used only as a fallback.
+Server-side, Gitwork loads the token with Auth0 `getAccessTokenForConnection({ connection: "github" })` for the current session user and uses it for indexing, commits, PR digests, releases, issues, and webhooks. The token is never returned to the client. An encrypted per-user GitHub PAT from `/settings` is used as a preferred fallback (and for owner tokens on shared projects).
 
 ## How the product works
 
@@ -199,10 +202,10 @@ prisma/
 
 ### Environment on the host
 
-Set the same variables as local (Clerk, `DATABASE_URL`, Gemini, Assembly, Cloudinary, `APP_URL`, and `TOKEN_ENCRYPTION_KEY` when stored tokens are enabled).
+Set the same variables as local (Auth0, `DATABASE_URL`, `DIRECT_URL`, Gemini, Assembly, Cloudinary, `APP_URL`, and `TOKEN_ENCRYPTION_KEY` when stored tokens are enabled).
 `GITHUB_TOKEN` is optional if every user connects GitHub OAuth.
 
-Update Clerk + GitHub OAuth **callback / homepage URLs** for production. Point `APP_URL` at your public URL so webhooks work.
+Update Auth0 + GitHub OAuth **callback / homepage URLs** for production. Point `APP_URL` / `APP_BASE_URL` at your public URL so Auth0 and webhooks work.
 
 ### Option A — Vercel (direct)
 
@@ -238,7 +241,7 @@ Builds run on **GitHub Actions** (~7 GB RAM), then upload a prebuilt artifact to
    | `VERCEL_ORG_ID` | `orgId` from `.vercel/project.json` |
    | `VERCEL_PROJECT_ID` | `projectId` from `.vercel/project.json` |
 
-4. **Set app env vars on the Vercel project** (Production): same as local — `DATABASE_URL`, `DIRECT_URL`, Clerk **production** keys (`pk_live_` / `sk_live_`), `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, Cloudinary `NEXT_PUBLIC_*`, `APP_URL` (your production URL). For Neon, use the pooler URL with `pgbouncer=true` as `DATABASE_URL` and the non-pooler host as `DIRECT_URL`. Ensure Postgres has `pgvector`; run `npm run db:push` against prod once.
+4. **Set app env vars on the Vercel project** (Production): same as local — `DATABASE_URL`, `DIRECT_URL`, Auth0 keys (`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `APP_BASE_URL`), `GEMINI_API_KEY`, `ASSEMBLY_API_KEY`, Cloudinary `NEXT_PUBLIC_*`, `APP_URL` (your production URL). For Neon, use the pooler URL with `pgbouncer=true` as `DATABASE_URL` and the non-pooler host as `DIRECT_URL`. Ensure Postgres has `pgvector`; run `npm run db:push` against prod once.
 
 5. **Push to `main`** (or run **Deploy to Vercel** via Actions → Run workflow). The job logs print the production URL.
 
@@ -260,7 +263,7 @@ PR digest product spec: [README-pr-review-digests.md](./README-pr-review-digests
 
 | Problem | Fix |
 |---------|-----|
-| Can’t create / index a project | Connect GitHub with `repo` scope in Clerk (custom OAuth app) |
+| Can’t create / index a project | Connect GitHub with `repo` scope in Auth0 (custom OAuth app) |
 | Google login but no repos | Authorize GitHub on `/create` (linking is separate from sign-in) |
 | Branches / private repo 404 | Re-authorize GitHub; confirm `repo` scope |
 | Webhooks not firing | Set public `APP_URL` (ngrok in local dev); check webhook registration on the repo |

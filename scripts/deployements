@@ -1,10 +1,5 @@
-Deployement failed due to - clerk key error 
- key rotated
+Deploy notes
 
-Keys - sesitivity
-
-next version fix
-
-production clerk added
-
-dep after new sec
+- Prefer Auth0 env on Vercel (AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET, APP_BASE_URL).
+- Remove any leftover CLERK_* variables from Vercel project settings.
+- Neon: DATABASE_URL must include pgbouncer=true on the pooler; set DIRECT_URL for migrate/db push.

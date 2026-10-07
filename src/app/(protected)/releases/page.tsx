@@ -46,7 +46,7 @@ export default function ReleasesPage() {
     onError: (err) => toast.error(err.message || "Failed to create draft release"),
   });
 
-  const tags = tagsQuery.data ?? [];
+  const tags = useMemo(() => tagsQuery.data ?? [], [tagsQuery.data]);
   const defaultHead =
     project?.activeBranch ?? project?.defaultBranch ?? "HEAD";
 
@@ -69,7 +69,7 @@ export default function ReleasesPage() {
         <EmptyState
           icon={Tag}
           title="Select a project"
-          description="Choose a project from the sidebar to draft release notes."
+          description="Choose a project from Projects to draft release notes."
         />
       ) : tagsQuery.isLoading ? (
         <div className="space-y-3">

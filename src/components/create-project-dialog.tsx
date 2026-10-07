@@ -205,7 +205,7 @@ export function CreateProjectDialog({
             utils.project.getProjects.setData(undefined, (prev) => {
               const list = prev ?? [];
               if (list.some((p) => p.id === project.id)) return list;
-              return [project, ...list];
+              return [{ ...project, role: "OWNER" as const }, ...list];
             });
           }
           void utils.project.getProjects.invalidate();

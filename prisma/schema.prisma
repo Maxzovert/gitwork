@@ -3,6 +3,8 @@
 
 generator client {
     provider        = "prisma-client-js"
+    // native = local/CI (e.g. GitHub Actions debian); rhel = Vercel Node runtime
+    binaryTargets   = ["native", "rhel-openssl-3.0.x"]
     previewFeatures = ["postgresqlExtensions"]
 }
 
