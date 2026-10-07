@@ -39,6 +39,8 @@ model User {
     lastName  String?
 
     emailAdress String @unique
+    /// Auth0 `sub` when this row was linked from Google/email (may differ from `id` if user first signed in with GitHub).
+    auth0Sub String? @unique
     /// GitHub numeric user id when linked via direct OAuth (login or connect).
     githubUserId String? @unique
     credits     Int    @default(150)

@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import {
   BookOpen,
   Bot,
-  FolderGit2,
   GitPullRequestArrow,
   LayoutDashboard,
   Presentation,
@@ -35,7 +34,6 @@ function Appsidebar() {
   const { open } = useSidebar();
 
   const items = [
-    { title: "All projects", url: "/projects", icon: FolderGit2 },
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
     { title: "Overview", url: "/overview", icon: BookOpen },
     { title: "Q&A", url: "/qa", icon: Bot },
@@ -57,7 +55,7 @@ function Appsidebar() {
       )}
     >
       <SidebarHeader className="bg-[#f3f0ee] px-4 pt-5 pb-4">
-        <Link href="/projects" className="flex items-center">
+        <Link href="/dashboard" className="flex items-center">
           <GitworkLogo size={28} withWordmark={open} />
         </Link>
       </SidebarHeader>

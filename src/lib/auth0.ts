@@ -1,44 +1,8 @@
-import { Auth0Client } from "@auth0/nextjs-auth0/server";
-import { NextResponse } from "next/server";
-
 import { readAppSessionFromCookies } from "@/lib/app-session";
+import { auth0 } from "@/lib/auth0-client";
+import { db } from "@/server/db";
 
-/**
- * Auth0 App Router client (v4). Middleware mounts /auth/* routes.
- * Env: AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET, APP_BASE_URL
- *
- * Hybrid auth:
- * - Google / email → Auth0 Universal Login
- * - GitHub → direct OAuth at /api/auth/github (not Auth0 social)
- */
-export const auth0 = new Auth0Client({
-  authorizationParameters: {
-    scope: "openid profile email offline_access",
-  },
-  enableConnectAccountEndpoint: true,
-  logoutStrategy: "v2",
-  signInReturnToPath: "/sync-user",
-  async onCallback(error, ctx) {
-    if (error) {
-      const params = new URLSearchParams({
-        error: error.message || "auth_failed",
-      });
-      const base = ctx.appBaseUrl || process.env.APP_BASE_URL || "http://localhost:3000";
-      const returnTo = ctx.returnTo || "";
-      if (returnTo.includes("/create")) {
-        params.set("github", "error");
-        return NextResponse.redirect(
-          `${base}/create?${params.toString()}`,
-        );
-      }
-      return NextResponse.redirect(`${base}/sign-in?${params.toString()}`);
-    }
-
-    const returnTo = ctx.returnTo || "/sync-user";
-    const base = ctx.appBaseUrl || process.env.APP_BASE_URL || "http://localhost:3000";
-    return NextResponse.redirect(new URL(returnTo, base));
-  },
-});
+export { auth0 };
 
 export type SessionUser = {
   userId: string;
@@ -49,10 +13,28 @@ export type SessionUser = {
   family_name?: string | null;
   /** True for GitHub-native app session, or Auth0 sub starting with github|. */
   signedInWithGithub: boolean;
+  /** Raw Auth0 `sub` when signed in via Auth0 (before/after DB linking). */
+  auth0Sub?: string | null;
 };
 
 export function userSignedInWithGithub(sub: string | undefined | null) {
   return typeof sub === "string" && sub.startsWith("github|");
+}
+
+/**
+ * Map Auth0 `sub` to Prisma User.id (may differ after linking Google to a
+ * GitHub-created account via `auth0Sub`).
+ */
+async function resolveAuth0DbUserId(sub: string): Promise<string> {
+  try {
+    const row = await db.user.findFirst({
+      where: { OR: [{ id: sub }, { auth0Sub: sub }] },
+      select: { id: true },
+    });
+    return row?.id ?? sub;
+  } catch {
+    return sub;
+  }
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
@@ -60,14 +42,16 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     const session = await auth0.getSession();
     const sub = session?.user?.sub;
     if (sub) {
+      const userId = await resolveAuth0DbUserId(sub);
       return {
-        userId: sub,
+        userId,
         email: (session.user.email as string | undefined) ?? null,
         name: (session.user.name as string | undefined) ?? null,
         picture: (session.user.picture as string | undefined) ?? null,
         given_name: (session.user.given_name as string | undefined) ?? null,
         family_name: (session.user.family_name as string | undefined) ?? null,
         signedInWithGithub: userSignedInWithGithub(sub),
+        auth0Sub: sub,
       };
     }
   } catch {
@@ -85,6 +69,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     given_name: null,
     family_name: null,
     signedInWithGithub: app.signedInWithGithub,
+    auth0Sub: null,
   };
 }
 

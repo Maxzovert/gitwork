@@ -47,9 +47,9 @@ export const getCommitHashes = async (
 export async function ingestCommits(
   projectId: string,
   commits: CommitInput[],
-  githubToken?: string,
+  _githubToken?: string,
 ) {
-  const { githubUrl } = await fetchProjectGithubUrl(projectId);
+  await fetchProjectGithubUrl(projectId);
   const unprocessedCommits = await filterUnprocessedCommits(
     projectId,
     commits,
@@ -58,6 +58,8 @@ export async function ingestCommits(
     return { count: 0, message: "No new commits to process" };
   }
 
+  // Store the commit subject as a placeholder summary. AI summaries are
+  // generated on demand from the dashboard (Summarize button).
   const result = await db.commit.createMany({
     data: unprocessedCommits.map((commit) => ({
       projectId,
@@ -70,15 +72,6 @@ export async function ingestCommits(
     })),
     skipDuplicates: true,
   });
-
-  void enhanceCommitSummaries(
-    projectId,
-    githubUrl,
-    unprocessedCommits,
-    githubToken,
-  ).catch((error) =>
-    console.error("Failed to enhance commit summaries:", error),
-  );
 
   return result;
 }
@@ -113,38 +106,65 @@ export const pullCommits = async (
   return ingestCommits(projectId, commitHashes, token);
 };
 
-async function enhanceCommitSummaries(
+function commitSubject(message: string) {
+  return message.split("\n")[0]?.trim() || message;
+}
+
+/** True when `summary` looks like a real AI summary (not the placeholder subject). */
+export function hasAiCommitSummary(summary: string, commitMessage: string) {
+  const raw = summary?.trim() ?? "";
+  const subject = commitSubject(commitMessage);
+  if (!raw || raw === subject) return false;
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("quota exceeded") ||
+    lower.includes("summary unavailable") ||
+    lower.includes("error processing")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** On-demand AI summary for one commit; persists to `Commit.summary`. */
+export async function summarizeProjectCommit(
   projectId: string,
-  githubUrl: string,
-  commits: CommitInput[],
+  commitHash: string,
   githubToken?: string,
 ) {
-  for (const commit of commits) {
-    try {
-      const summary = await summariesCommits(
-        githubUrl,
-        commit.commitHash,
-        githubToken,
-      );
-      if (
-        !summary ||
-        summary.includes("quota exceeded") ||
-        summary === "Error processing commit changes"
-      ) {
-        continue;
-      }
-
-      await db.commit.updateMany({
-        where: {
-          projectId,
-          commitHash: commit.commitHash,
-        },
-        data: { summary },
-      });
-    } catch (error) {
-      console.error(`Skipping AI summary for ${commit.commitHash}:`, error);
-    }
+  const commit = await db.commit.findUnique({
+    where: {
+      projectId_commitHash: { projectId, commitHash },
+    },
+  });
+  if (!commit) {
+    throw new Error("Commit not found");
   }
+
+  if (hasAiCommitSummary(commit.summary, commit.commitMessage)) {
+    return { summary: commit.summary, cached: true as const };
+  }
+
+  const { githubUrl } = await fetchProjectGithubUrl(projectId);
+  const token =
+    githubToken ?? (await resolveProjectGithubToken(projectId));
+  const summary = await summariesCommits(githubUrl, commitHash, token);
+
+  if (
+    !summary ||
+    summary.includes("quota exceeded") ||
+    summary === "Error processing commit changes" ||
+    summary === "Summary unavailable (Gemini quota exceeded)"
+  ) {
+    throw new Error(summary || "Failed to summarise commit");
+  }
+
+  await db.commit.updateMany({
+    where: { projectId, commitHash },
+    data: { summary },
+  });
+
+  return { summary, cached: false as const };
 }
 
 export async function summariesCommits(

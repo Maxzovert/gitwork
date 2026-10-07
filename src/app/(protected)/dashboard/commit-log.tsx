@@ -6,7 +6,14 @@ import useProjects from "@/hooks/use-projects";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ExternalLink, GitCommitHorizontal, RefreshCw, Sparkles } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  GitCommitHorizontal,
+  Loader2,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { minidenticon } from "minidenticons";
 import { EmptyState } from "@/components/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,22 +32,32 @@ function fileBasename(path: string) {
   return parts[parts.length - 1] || cleaned;
 }
 
+function commitSubject(message: string) {
+  return message.split("\n")[0]?.trim() || message;
+}
+
+function hasAiCommitSummary(summary: string, commitMessage: string) {
+  const raw = summary?.trim() ?? "";
+  const subject = commitSubject(commitMessage);
+  if (!raw || raw === subject) return false;
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("quota exceeded") ||
+    lower.includes("summary unavailable") ||
+    lower.includes("error processing") ||
+    lower.includes("no meaningful changes")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /** Turn dense AI bullet dumps into short readable change lines. */
 function parseCommitSummary(summary: string, commitMessage: string): ParsedChange[] {
-  const raw = summary?.trim() ?? "";
-  const subject = commitMessage.split("\n")[0]?.trim() ?? commitMessage;
+  if (!hasAiCommitSummary(summary, commitMessage)) return [];
 
-  if (
-    !raw ||
-    raw === subject ||
-    raw.toLowerCase().includes("quota exceeded") ||
-    raw.toLowerCase().includes("summary unavailable") ||
-    raw.toLowerCase().includes("error processing")
-  ) {
-    return [];
-  }
-
-  const lines = raw
+  const lines = summary
+    .trim()
     .split(/\n+/)
     .map((line) => line.replace(/^[\s*•\-–—]+/, "").trim())
     .filter(Boolean);
@@ -79,6 +96,11 @@ function relativeTime(date: Date | string) {
 const CommitLog = () => {
   const { projectId, project } = useProjects();
   const utils = api.useUtils();
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const [summarizingHash, setSummarizingHash] = React.useState<string | null>(
+    null,
+  );
+
   const { data: commits, isLoading } = api.project.getCommits.useQuery(
     { projectId },
     {
@@ -98,6 +120,18 @@ const CommitLog = () => {
     onError: (err) => toast.error(err.message || "Failed to sync commits"),
   });
 
+  const summarizeCommit = api.project.summarizeCommit.useMutation({
+    onSuccess: async (result, variables) => {
+      await utils.project.getCommits.invalidate({ projectId });
+      setExpanded((prev) => ({ ...prev, [variables.commitHash]: true }));
+      if (!result.cached) {
+        toast.success("Summary ready");
+      }
+    },
+    onError: (err) => toast.error(err.message || "Failed to summarise commit"),
+    onSettled: () => setSummarizingHash(null),
+  });
+
   let repoCleaned: string | null = null;
   try {
     if (project?.githubUrl) {
@@ -105,6 +139,19 @@ const CommitLog = () => {
     }
   } catch {
     repoCleaned = null;
+  }
+
+  async function onSummarize(commitHash: string, summary: string, message: string) {
+    const already = hasAiCommitSummary(summary, message);
+    if (already) {
+      setExpanded((prev) => ({
+        ...prev,
+        [commitHash]: !prev[commitHash],
+      }));
+      return;
+    }
+    setSummarizingHash(commitHash);
+    summarizeCommit.mutate({ projectId, commitHash });
   }
 
   if (!project || !projectId.trim()) {
@@ -121,7 +168,7 @@ const CommitLog = () => {
     return (
       <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 w-full rounded-2xl" />
+          <Skeleton key={i} className="h-24 w-full rounded-2xl" />
         ))}
       </div>
     );
@@ -174,14 +221,23 @@ const CommitLog = () => {
 
       <ul className="relative space-y-0">
         {commits.map((commit, commitIdx) => {
-          const subject =
-            commit.commitMessage.split("\n")[0]?.trim() || commit.commitMessage;
-          const changes = parseCommitSummary(commit.summary, commit.commitMessage);
+          const subject = commitSubject(commit.commitMessage);
+          const bodyLines = commit.commitMessage
+            .split("\n")
+            .slice(1)
+            .map((l) => l.trim())
+            .filter(Boolean);
           const shortHash = commit.commitHash.slice(0, 7);
           const href = repoCleaned
             ? githubCommitUrl(repoCleaned, commit.commitHash)
             : `${project?.githubUrl}/commit/${commit.commitHash}`;
           const isLast = commitIdx === commits.length - 1;
+          const ready = hasAiCommitSummary(commit.summary, commit.commitMessage);
+          const isOpen = Boolean(expanded[commit.commitHash]) && ready;
+          const changes = isOpen
+            ? parseCommitSummary(commit.summary, commit.commitMessage)
+            : [];
+          const isBusy = summarizingHash === commit.commitHash;
 
           return (
             <li key={commit.commitHash} className="relative flex gap-4 pb-4">
@@ -240,8 +296,47 @@ const CommitLog = () => {
                 <h3 className="mt-2 font-display text-[15px] leading-snug tracking-[-0.02em] text-[#141413]">
                   {subject}
                 </h3>
+                {bodyLines.length > 0 ? (
+                  <p className="mt-1 line-clamp-3 text-sm leading-6 text-[#696969]">
+                    {bodyLines.join(" ")}
+                  </p>
+                ) : null}
 
-                {changes.length > 0 ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    onClick={() =>
+                      void onSummarize(
+                        commit.commitHash,
+                        commit.summary,
+                        commit.commitMessage,
+                      )
+                    }
+                    className="h-8 rounded-lg border-[#d1cdc7] text-xs text-[#141413]"
+                  >
+                    {isBusy ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Summarising…
+                      </>
+                    ) : isOpen ? (
+                      <>
+                        <ChevronDown className="size-3.5" />
+                        Hide summary
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="size-3.5 text-[#cf4500]" />
+                        {ready ? "Show summary" : "Summarize"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {isOpen && changes.length > 0 ? (
                   <div className="mt-3 rounded-xl bg-[#f3f0ee]/70 px-3 py-2.5">
                     <p className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.04em] text-[#696969] uppercase">
                       <Sparkles className="size-3 text-[#cf4500]" />
@@ -252,7 +347,10 @@ const CommitLog = () => {
                         const visibleFiles = change.files.slice(0, 2);
                         const extra = change.files.length - visibleFiles.length;
                         return (
-                          <li key={`${commit.commitHash}-${idx}`} className="flex gap-2">
+                          <li
+                            key={`${commit.commitHash}-${idx}`}
+                            className="flex gap-2"
+                          >
                             <span
                               aria-hidden
                               className="mt-2 size-1.5 shrink-0 rounded-full bg-[#cf4500]"

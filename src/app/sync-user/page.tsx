@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { WorkspaceLoader } from "@/components/workspace-loader";
 import { completeUserSync } from "./actions";
@@ -48,11 +49,15 @@ export default function SyncUserPage() {
     }, SYNC_TIMEOUT_MS);
 
     void completeUserSync()
-      .then((href) => {
-        finish(href === "/sign-in" ? "/sign-in" : href);
+      .then((result) => {
+        if (result.error) {
+          toast.error(result.error);
+        }
+        finish(result.redirect || "/sign-in");
       })
       .catch((error) => {
         console.error("completeUserSync failed:", error);
+        toast.error("Could not finish sign-in. Please try again.");
         finish("/sign-in");
       });
 

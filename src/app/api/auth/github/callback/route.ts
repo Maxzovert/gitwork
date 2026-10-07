@@ -40,10 +40,16 @@ function splitName(name: string | null) {
   };
 }
 
-async function resolveAuth0UserId(request: NextRequest) {
+async function resolveSessionDbUserId(request: NextRequest) {
   try {
     const session = await auth0.getSession(request);
-    return session?.user?.sub ?? null;
+    const sub = session?.user?.sub;
+    if (!sub) return null;
+    const linked = await db.user.findFirst({
+      where: { OR: [{ id: sub }, { auth0Sub: sub }] },
+      select: { id: true },
+    });
+    return linked?.id ?? sub;
   } catch {
     return null;
   }
@@ -84,7 +90,7 @@ export async function GET(request: NextRequest) {
     let resolvedUserId: string;
 
     if (oauthState.intent === "connect") {
-      const auth0UserId = await resolveAuth0UserId(request);
+      const auth0UserId = await resolveSessionDbUserId(request);
       const appSession = await readAppSessionFromRequest(request);
       const sessionUserId = auth0UserId || appSession?.userId || null;
 
@@ -115,6 +121,7 @@ export async function GET(request: NextRequest) {
             id: resolvedUserId,
             emailAdress: email,
             githubUserId,
+            auth0Sub: resolvedUserId.includes("|") ? resolvedUserId : undefined,
             imageUrl: profile.avatarUrl ?? undefined,
             firstName: firstName ?? undefined,
             lastName: lastName ?? undefined,

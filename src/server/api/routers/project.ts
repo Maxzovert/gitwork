@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { pullCommits } from "@/lib/github";
+import { pullCommits, summarizeProjectCommit } from "@/lib/github";
 import {
   getGithubConnectionStatus,
   listUserGithubRepos,
@@ -795,6 +795,23 @@ export const projectRouter = createTRPCRouter({
       await requireProjectMember(ctx.db, input.projectId, ctx.user.userId!);
       const githubToken = await requireUserGithubToken(ctx.user.userId!);
       return await pullCommits(input.projectId, githubToken);
+    }),
+
+  summarizeCommit: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string().min(1),
+        commitHash: z.string().min(7),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await requireProjectMember(ctx.db, input.projectId, ctx.user.userId!);
+      const githubToken = await requireUserGithubToken(ctx.user.userId!);
+      return await summarizeProjectCommit(
+        input.projectId,
+        input.commitHash,
+        githubToken,
+      );
     }),
 
   startIndexing: protectedProcedure

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { APP_SESSION_COOKIE, verifyAppSessionToken } from "@/lib/app-session";
-import { auth0 } from "@/lib/auth0";
+import { auth0 } from "@/lib/auth0-client";
 
 function isPublicPath(pathname: string) {
   if (pathname === "/") return true;

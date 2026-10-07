@@ -1,7 +1,8 @@
-import { db } from "@/server/db";
-import { getSessionUser, type SessionUser } from "@/lib/auth0";
-import * as Sentry from "@sentry/nextjs";
 import { Prisma } from "@prisma/client";
+import * as Sentry from "@sentry/nextjs";
+
+import { getSessionUser, type SessionUser } from "@/lib/auth0";
+import { db } from "@/server/db";
 
 function splitName(user: SessionUser) {
   const given = user.given_name?.trim() || null;
@@ -25,72 +26,128 @@ export async function ensureDbUser(options?: { refreshProfile?: boolean }) {
     throw new Error("User not authenticated");
   }
 
-  const { userId } = sessionUser;
+  // Prefer raw Auth0 sub for linking; fall back to resolved userId.
+  const auth0Sub = sessionUser.auth0Sub ?? null;
+  const sessionKey = auth0Sub ?? sessionUser.userId;
 
   try {
-    const existing = await db.user.findUnique({
-      where: { id: userId },
-      select: { id: true },
+    // Already linked: id matches session, or auth0Sub column matches.
+    const existing = await db.user.findFirst({
+      where: {
+        OR: [
+          { id: sessionUser.userId },
+          ...(auth0Sub
+            ? [{ auth0Sub }, { id: auth0Sub }]
+            : [{ id: sessionKey }]),
+        ],
+      },
+      select: { id: true, auth0Sub: true },
     });
 
     if (existing && !options?.refreshProfile) {
-      return userId;
+      if (auth0Sub && existing.auth0Sub !== auth0Sub) {
+        await db.user.update({
+          where: { id: existing.id },
+          data: { auth0Sub },
+        });
+      }
+      return existing.id;
     }
 
     const email = sessionUser.email?.trim();
     if (!email) {
-      throw new Error("User has no email address");
+      throw new Error(
+        "Your Google account did not share an email. Allow email access and try again.",
+      );
     }
 
     const { firstName, lastName } = splitName(sessionUser);
+    const profile = {
+      emailAdress: email,
+      imageUrl: sessionUser.picture,
+      firstName,
+      lastName,
+    };
 
-    try {
-      await db.user.upsert({
-        where: { id: userId },
-        update: {
-          emailAdress: email,
-          imageUrl: sessionUser.picture,
-          firstName,
-          lastName,
-        },
-        create: {
-          id: userId,
-          emailAdress: email,
-          imageUrl: sessionUser.picture,
-          firstName,
-          lastName,
+    if (existing) {
+      await db.user.update({
+        where: { id: existing.id },
+        data: {
+          ...profile,
+          ...(auth0Sub ? { auth0Sub } : {}),
         },
       });
+      return existing.id;
+    }
+
+    // Same email already used (often after GitHub login) — link Auth0 to that row.
+    const byEmail = await db.user.findUnique({
+      where: { emailAdress: email },
+      select: { id: true, auth0Sub: true },
+    });
+
+    if (byEmail) {
+      if (
+        byEmail.auth0Sub &&
+        auth0Sub &&
+        byEmail.auth0Sub !== auth0Sub &&
+        byEmail.id !== auth0Sub
+      ) {
+        throw new Error(
+          "This email is already linked to another account. Sign in with GitHub or the original method.",
+        );
+      }
+      await db.user.update({
+        where: { id: byEmail.id },
+        data: {
+          ...profile,
+          ...(auth0Sub ? { auth0Sub } : {}),
+        },
+      });
+      return byEmail.id;
+    }
+
+    const createId = auth0Sub ?? sessionUser.userId;
+
+    try {
+      await db.user.create({
+        data: {
+          id: createId,
+          ...profile,
+          ...(auth0Sub ? { auth0Sub } : {}),
+        },
+      });
+      return createId;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002"
       ) {
-        const byEmail = await db.user.findUnique({
+        const again = await db.user.findUnique({
           where: { emailAdress: email },
           select: { id: true },
         });
-        if (byEmail && byEmail.id !== userId) {
-          Sentry.captureMessage(
-            "ensureDbUser: email already linked to another Auth0 user id",
-            {
-              level: "error",
-              extra: { auth0UserId: userId, existingUserId: byEmail.id },
+        if (again) {
+          await db.user.update({
+            where: { id: again.id },
+            data: {
+              ...profile,
+              ...(auth0Sub ? { auth0Sub } : {}),
             },
-          );
-          throw new Error(
-            "This email is already linked to another account. Sign in with the original identity or contact support.",
-          );
+          });
+          return again.id;
         }
       }
       throw error;
     }
-
-    return userId;
   } catch (error) {
     Sentry.captureException(error, {
       tags: { scope: "ensureDbUser" },
-      extra: { userId, refreshProfile: options?.refreshProfile ?? false },
+      extra: {
+        sessionKey,
+        auth0Sub,
+        refreshProfile: options?.refreshProfile ?? false,
+      },
     });
     throw error;
   }
