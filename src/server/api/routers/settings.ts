@@ -33,6 +33,31 @@ const defaultSettings = {
 };
 
 export const settingsRouter = createTRPCRouter({
+  getProfile: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.user.userId!;
+    const user = await ctx.db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        emailAdress: true,
+        firstName: true,
+        lastName: true,
+        imageUrl: true,
+        githubUserId: true,
+      },
+    });
+    if (!user) return null;
+    const name =
+      [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+    return {
+      id: user.id,
+      email: user.emailAdress,
+      name,
+      picture: user.imageUrl,
+      githubUserId: user.githubUserId,
+    };
+  }),
+
   getSettings: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.user.userId!;
     const existing = await ctx.db.userSettings.findUnique({

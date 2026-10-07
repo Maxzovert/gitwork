@@ -85,10 +85,7 @@ export function AuthForm({ mode, returnTo, signedInEmail, authError }: Props) {
           Continue with Google
         </a>
         <a
-          href={authLoginHref(returnTo, {
-            connection: "github",
-            connection_scope: "repo",
-          })}
+          href="/api/auth/github?intent=login"
           className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#d1cdc7] bg-white text-sm font-medium text-[#141413] transition hover:bg-[#f3f0ee]"
         >
           <GithubIcon />

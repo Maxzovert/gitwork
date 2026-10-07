@@ -39,6 +39,8 @@ model User {
     lastName  String?
 
     emailAdress String @unique
+    /// GitHub numeric user id when linked via direct OAuth (login or connect).
+    githubUserId String? @unique
     credits     Int    @default(150)
 
     userToProjects  userToProject[]

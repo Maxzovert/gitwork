@@ -8,10 +8,19 @@ import { useUser } from "@auth0/nextjs-auth0";
 import useProjects from "@/hooks/use-projects";
 import { SignOutButton } from "@/components/sign-out-button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { api } from "@/trpc/react";
 
 export function AppTopBar() {
   const { project } = useProjects();
-  const { user } = useUser();
+  const { user: auth0User } = useUser();
+  const profile = api.settings.getProfile.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const user = {
+    picture: auth0User?.picture ?? profile.data?.picture ?? null,
+    name: auth0User?.name ?? profile.data?.name ?? null,
+    email: auth0User?.email ?? profile.data?.email ?? null,
+  };
 
   return (
     <header className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center gap-3 border-b border-[#d1cdc7] bg-[#f3f0ee] px-4 py-2 sm:px-6">

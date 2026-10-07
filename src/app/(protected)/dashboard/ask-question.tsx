@@ -141,7 +141,13 @@ type AskQuestionCardProps = {
 };
 
 const AskQuestionCard = ({ className }: AskQuestionCardProps) => {
-  const { user } = useUser();
+  const { user: auth0User } = useUser();
+  const profile = api.settings.getProfile.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const user = {
+    picture: auth0User?.picture ?? profile.data?.picture ?? null,
+  };
   const { project, projects, projectId, setProjectId } = useProjects();
   const utils = api.useUtils();
 

@@ -106,12 +106,10 @@ const CREATE_GITHUB_RETURN = "/create";
 
 function githubConnectHref() {
   const params = new URLSearchParams({
+    intent: "connect",
     returnTo: CREATE_GITHUB_RETURN,
-    connection: "github",
-    connection_scope: "repo",
-    prompt: "consent",
   });
-  return `/auth/login?${params.toString()}`;
+  return `/api/auth/github?${params.toString()}`;
 }
 
 function getFriendlyGitHubError(message: string) {

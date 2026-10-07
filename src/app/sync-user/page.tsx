@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@auth0/nextjs-auth0";
 import { useRouter } from "next/navigation";
 
 import { WorkspaceLoader } from "@/components/workspace-loader";
@@ -18,18 +17,10 @@ const SYNC_TIMEOUT_MS = 12_000;
 
 export default function SyncUserPage() {
   const router = useRouter();
-  const { user, isLoading } = useUser();
   const [progress, setProgress] = useState(8);
   const [message, setMessage] = useState("Signing you in…");
 
   useEffect(() => {
-    if (isLoading) return;
-
-    if (!user) {
-      router.replace("/sign-in");
-      return;
-    }
-
     let cancelled = false;
 
     const tick = window.setInterval(() => {
@@ -58,11 +49,11 @@ export default function SyncUserPage() {
 
     void completeUserSync()
       .then((href) => {
-        finish(href === "/sign-in" ? "/projects" : href);
+        finish(href === "/sign-in" ? "/sign-in" : href);
       })
       .catch((error) => {
         console.error("completeUserSync failed:", error);
-        finish("/projects");
+        finish("/sign-in");
       });
 
     return () => {
@@ -70,7 +61,7 @@ export default function SyncUserPage() {
       window.clearInterval(tick);
       window.clearTimeout(timeout);
     };
-  }, [isLoading, user, router]);
+  }, [router]);
 
   return (
     <WorkspaceLoader

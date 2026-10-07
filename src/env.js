@@ -13,6 +13,9 @@ export const env = createEnv({
       .default("development"),
     APP_URL: z.string().url().optional(),
     GITHUB_TOKEN: z.string().optional(),
+    /** Direct GitHub OAuth App (login + repo API). Not Auth0 social. */
+    GITHUB_CLIENT_ID: z.string().min(1).optional(),
+    GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
     /** 64-char hex (32 bytes) used for AES-256-GCM of user API tokens */
     TOKEN_ENCRYPTION_KEY: z.string().min(32).optional(),
   },
@@ -35,6 +38,8 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     APP_URL: process.env.APP_URL,
     GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
     TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY,
   },
   /**

@@ -19,13 +19,11 @@ type Props = {
 };
 
 /**
- * Auth0 Allowed Logout URLs must include the exact returnTo (usually the app
- * origin, e.g. http://localhost:3000). Relative paths like /sign-in are rejected
- * and show Auth0's "Oops, something went wrong" page.
+ * Clears GitHub app session then Auth0 session.
+ * Auth0 Allowed Logout URLs must include the app origin.
  */
 function logoutHref() {
-  if (typeof window === "undefined") return "/auth/logout";
-  return `/auth/logout?returnTo=${encodeURIComponent(window.location.origin)}`;
+  return "/api/auth/logout";
 }
 
 export function SignOutButton({
