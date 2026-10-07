@@ -35,15 +35,15 @@ async function probeGithubUsername(token: string): Promise<string | null> {
  * Auth0 GitHub connection token for the **current** session user only.
  * Other users' tokens require Settings PAT (or Management API — not wired yet).
  */
-export async function getUserGithubToken(userId: string) {
-  const session = await getSessionUser();
-  if (!session?.userId || session.userId !== userId) {
-    return null;
-  }
+const GITHUB_CONNECTION = "github";
 
+/** Auth0 federated token exchange — access-token subject (RFC 8693). */
+const GITHUB_SUBJECT_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token";
+
+async function fetchGithubConnectionToken() {
   try {
     const result = await auth0.getAccessTokenForConnection({
-      connection: "github",
+      connection: GITHUB_CONNECTION,
     });
     return result.token ?? null;
   } catch (error) {
@@ -53,6 +53,46 @@ export async function getUserGithubToken(userId: string) {
     );
     return null;
   }
+}
+
+async function fetchGithubConnectionTokenViaAccessSubject() {
+  try {
+    const result = await auth0.getAccessTokenForConnection({
+      connection: GITHUB_CONNECTION,
+      subject_token_type:
+        GITHUB_SUBJECT_TYPE_ACCESS_TOKEN as Parameters<
+          typeof auth0.getAccessTokenForConnection
+        >[0]["subject_token_type"],
+    });
+    return result.token ?? null;
+  } catch (error) {
+    console.warn(
+      "[github-auth] getAccessTokenForConnection(github, access_token subject) failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+export async function getUserGithubToken(userId: string) {
+  const session = await getSessionUser();
+  if (!session?.userId || session.userId !== userId) {
+    return null;
+  }
+
+  const refreshGrant = await fetchGithubConnectionToken();
+  if (refreshGrant) return refreshGrant;
+
+  if (session.signedInWithGithub) {
+    return await fetchGithubConnectionTokenViaAccessSubject();
+  }
+
+  return null;
+}
+
+/** Warm Auth0 federated GitHub token after primary GitHub sign-in. */
+export async function ensureGithubConnectionToken(userId: string) {
+  return await getUserGithubToken(userId);
 }
 
 export async function requireUserGithubToken(userId: string) {
@@ -131,6 +171,9 @@ export async function listUserGithubRepos(
 }
 
 export async function getGithubConnectionStatus(userId: string) {
+  const session = await getSessionUser();
+  const signedInWithGithub = Boolean(session?.signedInWithGithub);
+
   const storedPat = await getStoredGithubPat(db, userId);
   const oauthToken = storedPat ? null : await getUserGithubToken(userId);
   const effectiveToken = storedPat ?? oauthToken;
@@ -163,5 +206,6 @@ export async function getGithubConnectionStatus(userId: string) {
       userTokenValid || usingServerFallback ? [...GITHUB_REPO_SCOPES] : [],
     usingServerFallback,
     usingSettingsPat: Boolean(storedPat) && userTokenValid,
+    signedInWithGithub,
   };
 }

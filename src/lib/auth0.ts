@@ -53,7 +53,13 @@ export type SessionUser = {
   picture?: string | null;
   given_name?: string | null;
   family_name?: string | null;
+  /** True when Auth0 `sub` is a GitHub social login (primary or linked). */
+  signedInWithGithub: boolean;
 };
+
+export function userSignedInWithGithub(sub: string | undefined | null) {
+  return typeof sub === "string" && sub.startsWith("github|");
+}
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   try {
@@ -68,6 +74,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       picture: (session.user.picture as string | undefined) ?? null,
       given_name: (session.user.given_name as string | undefined) ?? null,
       family_name: (session.user.family_name as string | undefined) ?? null,
+      signedInWithGithub: userSignedInWithGithub(sub),
     };
   } catch {
     // Misconfigured Auth0 must not blank public auth pages.

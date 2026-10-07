@@ -99,6 +99,8 @@ function githubConnectHref() {
   const params = new URLSearchParams({
     returnTo: CREATE_GITHUB_RETURN,
     connection: "github",
+    connection_scope: "repo",
+    prompt: "consent",
   });
   return `/auth/login?${params.toString()}`;
 }
@@ -163,13 +165,14 @@ export function CreateProjectOnboarding() {
   const repoUrlValid = isGithubRepoUrl(trimmedRepoUrl);
   const hasExistingProjects = Boolean(projects?.length);
   const hasUserGithub = Boolean(githubStatus.data?.connected);
+  const signedInWithGithub = Boolean(githubStatus.data?.signedInWithGithub);
   const githubReady = Boolean(githubStatus.data?.hasToken);
   const githubStatusLoading = githubStatus.isLoading && !githubStatus.data;
   const step2FieldsValid =
     Boolean(projectName?.trim()) && repoUrlValid;
   const canContinue =
     !githubStatusLoading &&
-    githubReady &&
+    (githubReady || (step === 1 && signedInWithGithub)) &&
     (step === 1 || (step === 2 && step2FieldsValid));
 
   const reposQuery = api.project.listGithubRepos.useQuery(undefined, {
@@ -192,6 +195,16 @@ export function CreateProjectOnboarding() {
       // ignore quota / private mode
     }
   }, [step]);
+
+  React.useEffect(() => {
+    if (!signedInWithGithub || githubReady || githubStatusLoading) return;
+    void utils.project.getGithubStatus.invalidate();
+  }, [
+    signedInWithGithub,
+    githubReady,
+    githubStatusLoading,
+    utils.project.getGithubStatus,
+  ]);
 
   React.useEffect(() => {
     if (!branch && branchesQuery.data?.defaultBranch) {
@@ -271,15 +284,21 @@ export function CreateProjectOnboarding() {
       return;
     }
 
-    if (!githubReady) {
-      toast.error(
-        "Connect GitHub or add a token in Settings before continuing.",
-      );
+    if (step === 1) {
+      if (!githubReady && !signedInWithGithub) {
+        toast.error(
+          "Connect GitHub or add a token in Settings before continuing.",
+        );
+        return;
+      }
+      setStep(2);
       return;
     }
 
-    if (step === 1) {
-      setStep(2);
+    if (!githubReady) {
+      toast.error(
+        "GitHub repository access is not ready yet. Add a token in Settings or try again in a moment.",
+      );
       return;
     }
 
@@ -580,6 +599,15 @@ export function CreateProjectOnboarding() {
                         : ""}
                       . Continue to add your repository.
                     </p>
+                  ) : signedInWithGithub ? (
+                    <p className="border-l-2 border-[#3860be]/50 pl-4 text-sm leading-6 text-[#696969]">
+                      You signed in with GitHub
+                      {githubStatus.data?.username
+                        ? ` (@${githubStatus.data.username})`
+                        : ""}
+                      . Continue to pick a repository — no extra connect step
+                      needed.
+                    </p>
                   ) : (
                     <div className="space-y-3 rounded-xl border border-[#d1cdc7] bg-[#fcfbfa] p-4 text-sm leading-6 text-[#696969]">
                       <p className="font-medium text-[#141413]">
@@ -660,21 +688,37 @@ export function CreateProjectOnboarding() {
                     </div>
                     {!githubReady ? (
                       <div className="rounded-xl border border-dashed border-[#9a3a0a]/40 bg-[#fcfbfa] p-4 text-sm text-[#696969]">
-                        GitHub is not connected.{" "}
-                        <a
-                          href={githubConnectHref()}
-                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                        >
-                          Connect GitHub
-                        </a>{" "}
-                        or add a token in{" "}
-                        <Link
-                          href="/settings"
-                          className="font-medium text-[#3860be] underline-offset-4 hover:underline"
-                        >
-                          Settings
-                        </Link>{" "}
-                        before you can continue.
+                        {signedInWithGithub ? (
+                          <>
+                            GitHub repository access is still loading. You can
+                            paste a repo URL above, or add a token in{" "}
+                            <Link
+                              href="/settings"
+                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                            >
+                              Settings
+                            </Link>
+                            .
+                          </>
+                        ) : (
+                          <>
+                            GitHub is not connected.{" "}
+                            <a
+                              href={githubConnectHref()}
+                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                            >
+                              Connect GitHub
+                            </a>{" "}
+                            or add a token in{" "}
+                            <Link
+                              href="/settings"
+                              className="font-medium text-[#3860be] underline-offset-4 hover:underline"
+                            >
+                              Settings
+                            </Link>{" "}
+                            before you can continue.
+                          </>
+                        )}
                       </div>
                     ) : null}
                     <Input
